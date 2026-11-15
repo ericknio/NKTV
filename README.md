@@ -32,28 +32,6 @@ Aplicativo moderno, fluido e de alta performance para reprodução de IPTV e Str
 
 ---
 
-## 🛠️ Como Compilar
-
-### Pré-requisitos
-- JDK 17+
-- Android SDK (API 35)
-
-```bash
-# Clonar o repositório
-git clone https://github.com/SEU-USUARIO/NKTV.git
-cd NKTV
-
-# Compilar versão de depuração (Debug)
-./gradlew assembleDebug
-
-# Compilar versão final (Release)
-./gradlew assembleRelease
-```
-
-O arquivo `.apk` gerado estará disponível em `app/build/outputs/apk/release/`.
-
----
-
 ## ⚖️ Licença e Aviso Legal
 
 Distribuído sob a licença [GPL-3.0](LICENSE).  
