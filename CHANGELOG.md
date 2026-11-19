@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.5
+
+- **Sincronização de Conteúdo:**
+  - Novo botão de sincronização na barra de navegação lateral (acima do botão de pesquisa).
+  - Confirmação de segurança via diálogo ("Deseja sincronizar todo o conteúdo?") para evitar recarregamento acidental.
+  - Atualização completa de canais ao vivo, fontes, guia EPG, filmes e séries em uma única ação.
+- **Ajuste de Densidade e Legibilidade:**
+  - Aumento da escala de densidade e fontes em 20% para melhorar a visibilidade e navegação em celulares e Android TV.
+
 ## 1.0.4
 
 - **Melhorias de segurança e estabilidade**:

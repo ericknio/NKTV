@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NKTV</string>
     <string name="common_done">Concluído</string>
@@ -11,6 +11,8 @@
     <string name="common_stop">Parar</string>
     <string name="common_delete">Excluir</string>
     <string name="common_selected">Selecionado</string>
+    <string name="common_yes">Sim</string>
+    <string name="common_no">Não</string>
     <string name="exit_title">Sair do NKTV?</string>
     <string name="exit_body">Deseja realmente sair e voltar para a tela inicial?</string>
     <string name="exit_confirm">Sair</string>
@@ -24,6 +26,9 @@
     <string name="nav_movies">Filmes</string>
     <string name="nav_shows">Séries</string>
     <string name="nav_recordings">Gravações</string>
+    <string name="nav_sync">Sincronizar</string>
+    <string name="sync_confirm_title">Sincronizar Conteúdo</string>
+    <string name="sync_confirm_body">Deseja sincronizar todo o conteúdo?</string>
     <string name="nav_search">Pesquisar</string>
     <string name="nav_settings">Config</string>
     <string name="guide_search_channels">🔍  Pesquisar canais</string>

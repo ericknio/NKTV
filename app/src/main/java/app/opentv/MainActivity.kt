@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
                     val currentDensity = androidx.compose.ui.platform.LocalDensity.current
                     val customDensity = remember(currentDensity) {
                         androidx.compose.ui.unit.Density(
-                            density = currentDensity.density * 0.70f,
+                            density = currentDensity.density * 0.84f,
                             fontScale = currentDensity.fontScale * 0.88f,
                         )
                     }
@@ -362,7 +362,10 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         )
                     },
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
-                    onRefresh = sourcesViewModel::refreshAll,
+                    onRefresh = {
+                        sourcesViewModel.refreshAll()
+                        vodViewModel.refreshVod()
+                    },
                     onOpenSearch = { navController.navigate(Routes.SEARCH) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
                     onOpenProfiles = { navController.navigate(Routes.PROFILES) },

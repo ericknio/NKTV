@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tv
@@ -138,6 +139,7 @@ fun MainScreen(
 
     // Prevent accidental exits with a confirmation prompt
     var showExit by remember { mutableStateOf(false) }
+    var showSyncConfirm by remember { mutableStateOf(false) }
     BackHandler { showExit = true }
     if (showExit) {
         AlertDialog(
@@ -154,6 +156,28 @@ fun MainScreen(
             },
         )
     }
+    if (showSyncConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSyncConfirm = false },
+            title = { Text(stringResource(R.string.sync_confirm_title)) },
+            text = { Text(stringResource(R.string.sync_confirm_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSyncConfirm = false
+                        onRefresh()
+                    }
+                ) {
+                    Text(stringResource(R.string.common_yes))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSyncConfirm = false }) {
+                    Text(stringResource(R.string.common_no))
+                }
+            },
+        )
+    }
 
     // The rail sits beside the content and pushes it, rather than floating over it. The Live TV
     // screen has its own category rail down its left edge, and an overlaying menu would land on top
@@ -164,6 +188,7 @@ fun MainScreen(
             tabs = visibleTabs,
             current = tab,
             onSelect = { tab = it },
+            onOpenSync = { showSyncConfirm = true },
             onOpenSearch = onOpenSearch,
             onOpenSettings = onOpenSettings,
             onOpenProfiles = onOpenProfiles,
@@ -257,6 +282,7 @@ private fun NavRail(
     tabs: List<Tab>,
     current: Tab,
     onSelect: (Tab) -> Unit,
+    onOpenSync: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
@@ -312,6 +338,7 @@ private fun NavRail(
         Spacer(Modifier.height(1.dp).fillMaxWidth())
         Spacer(Modifier.weight(1f))
 
+        RailItem(Icons.Filled.Refresh, stringResource(R.string.nav_sync), expanded, false, onOpenSync)
         RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
         RailItem(Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false, onOpenSettings)
     }
