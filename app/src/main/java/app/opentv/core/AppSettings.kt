@@ -99,12 +99,12 @@ class AppSettings private constructor(context: Context) {
         _pinIsSet.value && key in _hiddenCategories.value && key !in _unlockedCategories.value
 
     /**
-     * The category keys whose *content* must stay out of every list and search right now. With no PIN
-     * the "show hidden" switch lifts everything; with a PIN it only makes locked categories visible —
-     * each still needs the PIN once per session before its titles appear.
+     * The category keys that are locked right now: marked by the parent and not yet opened with the
+     * PIN this session. Locked categories stay visible (with a padlock) but their titles stay out of
+     * every list and search. Without a PIN there is nothing to ask, so nothing is locked.
      */
-    fun lockedKeys(hidden: Set<String>, showHidden: Boolean, unlocked: Set<String>, pinSet: Boolean): Set<String> =
-        if (!pinSet && showHidden) emptySet() else hidden - unlocked
+    fun lockedKeys(hidden: Set<String>, unlocked: Set<String>, pinSet: Boolean): Set<String> =
+        if (!pinSet) emptySet() else hidden - unlocked
 
     fun setPin(pin: String) {
         prefs.edit().putString(KEY_PIN_HASH, hashPin(pin)).apply()

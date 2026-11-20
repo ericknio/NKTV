@@ -3,7 +3,15 @@
  */
 package app.opentv.ui.account
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import app.opentv.core.ServiceLocator
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -78,6 +86,16 @@ fun AccountScreen(
     var showPassword by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
 
+    // Real status: authenticate against the server on open (and on demand), not a fixed label.
+    val context = LocalContext.current
+    val sourceRepository = remember { ServiceLocator.get(context).sourceRepository }
+    var status by remember { mutableStateOf(AccountStatus.CHECKING) }
+    var checkNonce by remember { mutableIntStateOf(0) }
+    LaunchedEffect(source.id, source.username, source.password, checkNonce) {
+        status = AccountStatus.CHECKING
+        status = if (sourceRepository.test(source).isSuccess) AccountStatus.ONLINE else AccountStatus.OFFLINE
+    }
+
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -102,18 +120,41 @@ fun AccountScreen(
                         modifier = Modifier.size(40.dp),
                     )
                     Spacer(Modifier.width(16.dp))
-                    Column {
+                    Text(
+                        source.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                when (status) {
+                    AccountStatus.CHECKING -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            source.name,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            "Ativa · Conectada",
+                            "Verificando status da conta...",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    AccountStatus.ONLINE -> StatusPill("● Online (Conta ativa e rodando)", Color(0xFF4CAF50))
+                    AccountStatus.OFFLINE -> StatusPill(
+                        "● Offline (Servidor indisponível ou falha na conexão)",
+                        MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = { checkNonce++ },
+                    enabled = status != AccountStatus.CHECKING,
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Testar Conexão")
                 }
 
                 Spacer(Modifier.height(20.dp))
@@ -175,6 +216,21 @@ fun AccountScreen(
             },
         )
     }
+}
+
+private enum class AccountStatus { CHECKING, ONLINE, OFFLINE }
+
+@Composable
+private fun StatusPill(text: String, color: Color) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = color,
+        modifier = Modifier
+            .background(color.copy(alpha = 0.15f), RoundedCornerShape(50))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 @Composable

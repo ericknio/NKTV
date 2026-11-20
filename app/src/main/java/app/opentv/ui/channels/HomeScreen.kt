@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
@@ -119,6 +120,7 @@ fun HomeScreen(
 
     val pinGate = app.opentv.ui.parental.rememberPinGate()
     val categories by viewModel.visibleCategoryGroups.collectAsState()
+    val lockedGroups by viewModel.lockedGroupKeys.collectAsState()
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
@@ -329,6 +331,7 @@ fun HomeScreen(
                         label = group.label,
                         selected = groupSelected,
                         onClick = { pinGate(group.key) { viewModel.selectCategory(group.key) } },
+                        locked = group.key in lockedGroups,
                         modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
@@ -440,15 +443,16 @@ fun HomeScreen(
 }
 
 @Composable
-private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+private fun RailEntry(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    locked: Boolean = false,
+) {
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
@@ -458,7 +462,26 @@ private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit, mod
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = fg,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (locked) {
+            Icon(
+                Icons.Filled.Lock,
+                contentDescription = "Categoria bloqueada",
+                tint = fg,
+                modifier = Modifier.padding(start = 6.dp).size(16.dp),
+            )
+        }
+    }
 }
 
 @Composable

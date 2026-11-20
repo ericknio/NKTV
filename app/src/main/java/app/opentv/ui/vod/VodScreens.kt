@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.CircularProgressIndicator
@@ -94,6 +95,7 @@ fun MoviesScreen(
 ) {
     val pinGate = app.opentv.ui.parental.rememberPinGate()
     val categories by viewModel.movieCategories.collectAsState()
+    val lockedMovies by viewModel.lockedMovieCats.collectAsState()
     val movieGroups by viewModel.movieGroups.collectAsState()
     val searchGroups by viewModel.movieSearchGroups.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
@@ -177,6 +179,7 @@ fun MoviesScreen(
                                 viewModel.selectMovieCategory(cat.id)
                             }
                         },
+                        locked = cat.id in lockedMovies,
                     )
                 }
             }
@@ -221,6 +224,7 @@ fun SeriesScreen(
 ) {
     val pinGate = app.opentv.ui.parental.rememberPinGate()
     val categories by viewModel.seriesCategories.collectAsState()
+    val lockedSeries by viewModel.lockedSeriesCats.collectAsState()
     val categorySeries by viewModel.series.collectAsState()
     val searchResults by viewModel.seriesSearchResults.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
@@ -304,6 +308,7 @@ fun SeriesScreen(
                                 viewModel.selectSeriesCategory(cat.id)
                             }
                         },
+                        locked = cat.id in lockedSeries,
                     )
                 }
             }
@@ -438,6 +443,7 @@ private fun VodRailEntry(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    locked: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
@@ -450,13 +456,7 @@ private fun VodRailEntry(
         selected -> MaterialTheme.colorScheme.onPrimaryContainer
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Text(
-        text = label,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
-        color = fg,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
@@ -464,7 +464,26 @@ private fun VodRailEntry(
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
+            color = fg,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (locked) {
+            Icon(
+                Icons.Filled.Lock,
+                contentDescription = "Categoria bloqueada",
+                tint = fg,
+                modifier = Modifier.padding(start = 6.dp).size(16.dp),
+            )
+        }
+    }
 }
 
 // ---- Whole-category browse grids ---------------------------------------------------------------

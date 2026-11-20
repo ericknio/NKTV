@@ -192,7 +192,7 @@
     <string name="settings_sleep_off">Desativado</string>
     <string name="settings_sleep_minutes">%1$d minutos</string>
     <string name="parental_hidden_categories">Categorias ocultas</string>
-    <string name="parental_hidden_desc">As categorias marcadas aqui são ocultadas da TV ao vivo até que você selecione “Mostrar ocultos agora” abaixo. Com um PIN configurado, esta tela fica bloqueada para proteger o conteúdo.</string>
+    <string name="parental_hidden_desc">As categorias marcadas aqui continuam na lista, mas com um cadeado: só abrem depois de digitar o PIN. É preciso ter um PIN configurado para o bloqueio valer, e esta tela também fica protegida por ele.</string>
     <string name="parental_show_hidden_title">Mostrar ocultos agora (nesta sessão)</string>
     <string name="parental_show_hidden_subtitle">Revela as categorias ocultas até o aplicativo ser fechado.</string>
     <string name="parental_no_categories">Nenhuma categoria encontrada — adicione um provedor primeiro.</string>

@@ -289,19 +289,25 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         combine(
             categoryGroups,
             settings.hiddenCategories,
-            settings.hiddenUnlocked,
             settings.unlockedCategories,
             settings.pinIsSet,
-        ) { groups, hidden, showHidden, unlocked, pinSet ->
-            val locked = settings.lockedKeys(hidden, showHidden, unlocked, pinSet)
+        ) { groups, hidden, unlocked, pinSet ->
+            val locked = settings.lockedKeys(hidden, unlocked, pinSet)
             groups.filter { it.key in locked }.flatMap { it.ids }.toSet()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    /** The rail's view of categories: hidden ones drop out until the session is unlocked. */
-    val visibleCategoryGroups: StateFlow<List<CategoryGroup>> =
-        combine(categoryGroups, settings.hiddenCategories, settings.hiddenUnlocked) { groups, hidden, unlocked ->
-            if (unlocked) groups else groups.filter { it.key !in hidden }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** The rail shows every category; locked ones are marked with a padlock (see [lockedGroupKeys]). */
+    val visibleCategoryGroups: StateFlow<List<CategoryGroup>> = categoryGroups
+
+    /** Group keys still behind the PIN — the rail draws a padlock on these. */
+    val lockedGroupKeys: StateFlow<Set<String>> =
+        combine(settings.hiddenCategories, settings.unlockedCategories, settings.pinIsSet) { hidden, unlocked, pinSet ->
+            settings.lockedKeys(hidden, unlocked, pinSet)
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            settings.lockedKeys(settings.hiddenCategories.value, settings.unlockedCategories.value, settings.pinIsSet.value),
+        )
 
     /**
      * One row on screen = one *logical* channel.
@@ -787,16 +793,14 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private val lockedKeys: StateFlow<Set<String>> =
         combine(
             settings.hiddenCategories,
-            settings.hiddenUnlocked,
             settings.unlockedCategories,
             settings.pinIsSet,
-        ) { hidden, showHidden, unlocked, pinSet -> settings.lockedKeys(hidden, showHidden, unlocked, pinSet) }
+        ) { hidden, unlocked, pinSet -> settings.lockedKeys(hidden, unlocked, pinSet) }
             .stateIn(
                 viewModelScope,
                 SharingStarted.Eagerly,
                 settings.lockedKeys(
                     settings.hiddenCategories.value,
-                    settings.hiddenUnlocked.value,
                     settings.unlockedCategories.value,
                     settings.pinIsSet.value,
                 ),
@@ -805,11 +809,13 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private fun idsLocked(keys: Set<String>, prefix: String): Set<String> =
         keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }.toSet()
 
-    private val lockedMovieCats: StateFlow<Set<String>> =
+    /** Movie category ids still behind the PIN — the Movies rail draws a padlock on these. */
+    val lockedMovieCats: StateFlow<Set<String>> =
         lockedKeys.map { idsLocked(it, "movie:") }
             .stateIn(viewModelScope, SharingStarted.Eagerly, idsLocked(lockedKeys.value, "movie:"))
 
-    private val lockedSeriesCats: StateFlow<Set<String>> =
+    /** Series category ids still behind the PIN — the Shows rail draws a padlock on these. */
+    val lockedSeriesCats: StateFlow<Set<String>> =
         lockedKeys.map { idsLocked(it, "series:") }
             .stateIn(viewModelScope, SharingStarted.Eagerly, idsLocked(lockedKeys.value, "series:"))
 
@@ -830,29 +836,21 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     // Category chips scoped to the chosen provider: pick a provider and you see only its categories,
     // and since a category id belongs to one provider, the grid you then open is already that
     // provider's titles. null folds categories across every provider ("All sources").
-    // Marked-locked categories drop out of the chips until "show hidden" is on; opening one then
-    // asks for the PIN (see the screens), and its titles stay filtered out until that succeeds.
+    // Locked categories stay in the chips (with a padlock); opening one asks for the PIN, and its
+    // titles stay filtered out of every grid and search until that succeeds.
     val movieCategories: StateFlow<List<Category>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.MOVIE),
             selectedVodSource,
-            settings.hiddenCategories,
-            settings.hiddenUnlocked,
-        ) { raw, sourceId, hidden, showHidden ->
-            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
-            if (showHidden) scoped else scoped.filter { "movie:${it.id}" !in hidden }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val seriesCategories: StateFlow<List<Category>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.SERIES),
             selectedVodSource,
-            settings.hiddenCategories,
-            settings.hiddenUnlocked,
-        ) { raw, sourceId, hidden, showHidden ->
-            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
-            if (showHidden) scoped else scoped.filter { "series:${it.id}" !in hidden }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val movies: StateFlow<List<Movie>> = movieCategory

@@ -258,9 +258,18 @@ private data class PatchNote(
 private object PatchNotesData {
     val notes = listOf(
         PatchNote(
-            version = "1.0.7",
+            version = "1.0.8",
             date = "Novembro 2026",
             isLatest = true,
+            changes = listOf(
+                "Status da Conta: Verificação de status online/offline na aba Minha Conta.",
+                "Cadeado em Conteúdo Adulto: Categorias protegidas visíveis com ícone de cadeado.",
+                "Desbloqueio por PIN: Exigência de senha ao clicar em qualquer categoria com cadeado.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.7",
+            date = "Novembro 2026",
             changes = listOf(
                 "Login Seguro: Validação antes de salvar e tela de carregamento de conteúdo.",
                 "Aba Minha Conta: Gestão completa de usuário e senha na barra lateral.",

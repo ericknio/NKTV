@@ -73,7 +73,6 @@ fun ParentalControlsScreen(
     val settings = remember { ServiceLocator.get(context).settings }
     val pinIsSet by settings.pinIsSet.collectAsState()
     val hidden by settings.hiddenCategories.collectAsState()
-    val unlocked by settings.hiddenUnlocked.collectAsState()
     val liveCategories by channelsViewModel.categoryGroups.collectAsState()
     val catalog = remember { ServiceLocator.get(context).catalogRepository }
     val movieCategories by remember { catalog.observeCategories(StreamKind.MOVIE) }.collectAsState(emptyList())
@@ -125,25 +124,6 @@ fun ParentalControlsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.widthIn(max = 720.dp),
         )
-        Spacer(Modifier.height(12.dp))
-
-        Card {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.parental_show_hidden_title), style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        stringResource(R.string.parental_show_hidden_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = unlocked, onCheckedChange = settings::setHiddenUnlocked)
-            }
-        }
-
         Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
