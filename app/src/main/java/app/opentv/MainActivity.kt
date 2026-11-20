@@ -431,6 +431,14 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         // Catch-up is a seekable archive stream — plays through the VOD player.
                         navController.navigate(Routes.vodPlayer(key, url, title, ua))
                     },
+                    onEditSource = { source ->
+                        navController.navigate(Routes.editSource(source.id))
+                    },
+                    onLogout = {
+                        navController.navigate(Routes.ADD_SOURCE) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
                     activeProfileName = activeProfileName,
                 )
             }

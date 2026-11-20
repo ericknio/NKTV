@@ -112,41 +112,61 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Saves, then immediately pulls the catalogue so the user sees channels, not a spinner. */
+    /**
+     * Authenticates against the real server first — nothing is written to the database until the
+     * credentials are proven to work. Only on success does it save, then pull live channels and the
+     * VOD catalogue (with a status line per stage) before calling [onDone]; a wrong password or a
+     * server error leaves the login screen exactly as it was, with [UiState.testError] set and
+     * nothing persisted.
+     */
     fun saveAndSync(draft: Source, onDone: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(syncing = true, syncMessage = "Saving source…")
-            val id = graph.sourceRepository.save(draft)
-            val saved = graph.sourceRepository.byId(id)
-            if (saved == null) {
-                _ui.value = _ui.value.copy(syncing = false, syncMessage = "Could not save source.")
+            _ui.value = _ui.value.copy(syncing = true, testError = null, syncMessage = "Autenticando…")
+
+            val authResult = graph.sourceRepository.test(draft)
+            if (authResult.isFailure) {
+                _ui.value = _ui.value.copy(
+                    syncing = false,
+                    syncMessage = null,
+                    testError = "Usuário ou senha inválidos. Verifique suas credenciais e tente novamente.",
+                )
                 onDone(false)
                 return@launch
             }
 
-            _ui.value = _ui.value.copy(syncMessage = "Loading channels…")
+            val id = graph.sourceRepository.save(draft)
+            val saved = graph.sourceRepository.byId(id)
+            if (saved == null) {
+                _ui.value = _ui.value.copy(syncing = false, syncMessage = null, testError = "Não foi possível salvar a conta.")
+                onDone(false)
+                return@launch
+            }
+
+            _ui.value = _ui.value.copy(syncMessage = "Carregando canais ao vivo…")
             val now = System.currentTimeMillis()
-            // Load live channels first and get the user watching straight away. Movies, series and
-            // the guide are what make a big provider take minutes — they load in the background so
-            // "loading channels" is a few seconds, not a twenty-minute blank screen.
+            // Load live channels first and get the user watching straight away. The guide is what
+            // makes a big provider take minutes — it still loads in the background so this doesn't
+            // turn into a twenty-minute blank screen; the VOD catalogue below is comparatively quick.
             when (val result = graph.catalogRepository.syncLive(saved, now)) {
                 is CatalogRepository.SyncResult.Failed -> {
-                    _ui.value = _ui.value.copy(syncing = false, syncMessage = result.reason)
+                    _ui.value = _ui.value.copy(syncing = false, syncMessage = null, testError = result.reason)
                     onDone(false)
                     return@launch
                 }
                 is CatalogRepository.SyncResult.Success -> {
-                    _ui.value = _ui.value.copy(
-                        syncing = false,
-                        syncMessage = "Loaded ${result.channelCount} channels. The guide is " +
-                            "loading in the background; Movies and Shows load when you open them.",
-                    )
-                    onDone(true)
+                    _ui.value = _ui.value.copy(syncMessage = "Carregando catálogo de filmes e séries…")
                 }
             }
 
-            // Background: the guide. Movies/series are pulled on demand from their own tabs, so
-            // nothing the user hasn't asked for ever blocks the channels they can already watch.
+            runCatching { graph.catalogRepository.syncVod(saved, now) }
+                .onFailure { Log.w("OpenTV", "VOD sync failed during initial setup", it) }
+
+            _ui.value = _ui.value.copy(syncing = false, syncMessage = "Concluído!")
+            kotlinx.coroutines.delay(600)
+            onDone(true)
+
+            // Background: the guide, which is the one stage slow enough on a big provider to be
+            // worth not blocking on.
             runCatching {
                 val summary = StatusBus.during("Building the TV guide…") {
                     graph.epgRepository.syncAll(now)
@@ -163,7 +183,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 // Book any new series-link airings the fresh guide just revealed.
                 runCatching { graph.recordingEngine.rescanSeriesRules() }
-            }.onFailure { Log.w("OpenTV", "Background VOD/guide load failed", it) }
+            }.onFailure { Log.w("OpenTV", "Background guide load failed", it) }
         }
     }
 
@@ -266,9 +286,15 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      * marked adult — unless the session is unlocked, in which case nothing is hidden.
      */
     private val hiddenCategoryIds: StateFlow<Set<String>> =
-        combine(categoryGroups, settings.hiddenCategories, settings.hiddenUnlocked) { groups, hidden, unlocked ->
-            if (unlocked) emptySet()
-            else groups.filter { it.key in hidden }.flatMap { it.ids }.toSet()
+        combine(
+            categoryGroups,
+            settings.hiddenCategories,
+            settings.hiddenUnlocked,
+            settings.unlockedCategories,
+            settings.pinIsSet,
+        ) { groups, hidden, showHidden, unlocked, pinSet ->
+            val locked = settings.lockedKeys(hidden, showHidden, unlocked, pinSet)
+            groups.filter { it.key in locked }.flatMap { it.ids }.toSet()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     /** The rail's view of categories: hidden ones drop out until the session is unlocked. */
@@ -756,6 +782,43 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private val movieCategory = MutableStateFlow<String?>(null)
     private val seriesCategory = MutableStateFlow<String?>(null)
 
+    // Parental lock: category keys whose titles must not appear anywhere (grids, search, home rows)
+    // until the PIN was entered for them. VOD keys are "movie:<categoryId>" / "series:<categoryId>".
+    private val lockedKeys: StateFlow<Set<String>> =
+        combine(
+            settings.hiddenCategories,
+            settings.hiddenUnlocked,
+            settings.unlockedCategories,
+            settings.pinIsSet,
+        ) { hidden, showHidden, unlocked, pinSet -> settings.lockedKeys(hidden, showHidden, unlocked, pinSet) }
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                settings.lockedKeys(
+                    settings.hiddenCategories.value,
+                    settings.hiddenUnlocked.value,
+                    settings.unlockedCategories.value,
+                    settings.pinIsSet.value,
+                ),
+            )
+
+    private fun idsLocked(keys: Set<String>, prefix: String): Set<String> =
+        keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }.toSet()
+
+    private val lockedMovieCats: StateFlow<Set<String>> =
+        lockedKeys.map { idsLocked(it, "movie:") }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, idsLocked(lockedKeys.value, "movie:"))
+
+    private val lockedSeriesCats: StateFlow<Set<String>> =
+        lockedKeys.map { idsLocked(it, "series:") }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, idsLocked(lockedKeys.value, "series:"))
+
+    private fun <T> kotlinx.coroutines.flow.Flow<List<T>>.hidingLocked(
+        locked: StateFlow<Set<String>>,
+        categoryOf: (T) -> String?,
+    ): kotlinx.coroutines.flow.Flow<List<T>> =
+        combine(this, locked) { list, ids -> if (ids.isEmpty()) list else list.filter { categoryOf(it) !in ids } }
+
     /** Provider filter for Movies/Shows. null = every source. Surfaced only when there's >1 source. */
     val selectedVodSource = MutableStateFlow<Long?>(null)
 
@@ -767,23 +830,34 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     // Category chips scoped to the chosen provider: pick a provider and you see only its categories,
     // and since a category id belongs to one provider, the grid you then open is already that
     // provider's titles. null folds categories across every provider ("All sources").
+    // Marked-locked categories drop out of the chips until "show hidden" is on; opening one then
+    // asks for the PIN (see the screens), and its titles stay filtered out until that succeeds.
     val movieCategories: StateFlow<List<Category>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.MOVIE),
             selectedVodSource,
-        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            settings.hiddenCategories,
+            settings.hiddenUnlocked,
+        ) { raw, sourceId, hidden, showHidden ->
+            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
+            if (showHidden) scoped else scoped.filter { "movie:${it.id}" !in hidden }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val seriesCategories: StateFlow<List<Category>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.SERIES),
             selectedVodSource,
-        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            settings.hiddenCategories,
+            settings.hiddenUnlocked,
+        ) { raw, sourceId, hidden, showHidden ->
+            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
+            if (showHidden) scoped else scoped.filter { "series:${it.id}" !in hidden }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val movies: StateFlow<List<Movie>> = movieCategory
         .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+        .hidingLocked(lockedMovieCats) { it.categoryId }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -793,6 +867,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     @OptIn(ExperimentalCoroutinesApi::class)
     val movieGroups: StateFlow<List<MovieVariantGroup>> = movieCategory
         .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+        .hidingLocked(lockedMovieCats) { it.categoryId }
         .map { list ->
             withContext(Dispatchers.Default) {
                 graph.catalogRepository.collapseVariants(list)
@@ -804,6 +879,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     @OptIn(ExperimentalCoroutinesApi::class)
     val series: StateFlow<List<Series>> = seriesCategory
         .flatMapLatest { graph.catalogRepository.observeSeries(it) }
+        .hidingLocked(lockedSeriesCats) { it.categoryId }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun selectMovieCategory(id: String?) { movieCategory.value = id }
@@ -848,10 +924,12 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
 
     val recentlyAddedMovies: StateFlow<List<Movie>> =
         graph.catalogRepository.recentlyAddedMovies()
+            .hidingLocked(lockedMovieCats) { it.categoryId }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val recentlyAddedSeries: StateFlow<List<Series>> =
         graph.catalogRepository.recentlyAddedSeries()
+            .hidingLocked(lockedSeriesCats) { it.categoryId }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _recommendedMovies = MutableStateFlow<List<Movie>>(emptyList())
@@ -864,7 +942,12 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     val seriesGenreRows: StateFlow<List<GenreGroup<Series>>> = _seriesGenreRows.asStateFlow()
 
     /** The (profile, catalogue) the computed rows were last built for — the redundant-reload guard. */
-    private data class HomeFeedsKey(val profileId: Long, val movieCount: Int, val seriesCount: Int)
+    private data class HomeFeedsKey(
+        val profileId: Long,
+        val movieCount: Int,
+        val seriesCount: Int,
+        val lockedKeys: Set<String>,
+    )
 
     @Volatile private var loadedHomeFeeds: HomeFeedsKey? = null
 
@@ -882,6 +965,8 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         // tab with the same profile and an unchanged catalogue triggers none. Reads an empty result
         // until a VOD sync has populated the catalogue; [ensureVodLoaded] re-runs it once one has.
         settings.activeProfileId.onEach { loadHomeFeeds() }.catch { }.launchIn(viewModelScope)
+        // Locking or unlocking a category changes which titles the computed rows may show.
+        lockedKeys.onEach { loadHomeFeeds() }.catch { }.launchIn(viewModelScope)
     }
 
     /**
@@ -905,14 +990,21 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
                 // Already built for this profile and this exact catalogue? Then a tab re-open or a
                 // recomposition must not trigger another full-library scan. Only a profile change or
                 // a catalogue whose size moved gets past here.
+                val locked = lockedKeys.value
                 val prev = loadedHomeFeeds
                 if (prev != null && prev.profileId == profileId &&
-                    prev.movieCount == movieCount && prev.seriesCount == seriesCount
+                    prev.movieCount == movieCount && prev.seriesCount == seriesCount &&
+                    prev.lockedKeys == locked
                 ) return@withLock
 
                 // One scan of each library (repo switches to IO), reused across every computed row.
+                // Titles in still-locked categories never make it into Recommended or a genre row.
+                val lockedMovies = idsLocked(locked, "movie:")
+                val lockedSeries = idsLocked(locked, "series:")
                 val allMovies = runCatching { graph.catalogRepository.allMovies() }.getOrDefault(emptyList())
+                    .filter { it.categoryId !in lockedMovies }
                 val allSeries = runCatching { graph.catalogRepository.allSeries() }.getOrDefault(emptyList())
+                    .filter { it.categoryId !in lockedSeries }
 
                 _recommendedMovies.value = runCatching {
                     graph.catalogRepository.recommendedMoviesFrom(allMovies, profileId)
@@ -924,7 +1016,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
                     graph.catalogRepository.seriesByGenreFrom(allSeries)
                 }.getOrDefault(emptyList())
 
-                loadedHomeFeeds = HomeFeedsKey(profileId, movieCount, seriesCount)
+                loadedHomeFeeds = HomeFeedsKey(profileId, movieCount, seriesCount, locked)
             }
         }
     }
@@ -1007,6 +1099,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             .flatMapLatest { q ->
                 if (q.isEmpty()) flowOf(emptyList()) else graph.catalogRepository.searchMovies(q)
             }
+            .hidingLocked(lockedMovieCats) { it.categoryId }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -1015,6 +1108,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             .flatMapLatest { q ->
                 if (q.isEmpty()) flowOf(emptyList()) else graph.catalogRepository.searchMovies(q)
             }
+            .hidingLocked(lockedMovieCats) { it.categoryId }
             .map { list ->
                 withContext(Dispatchers.Default) {
                     graph.catalogRepository.collapseVariants(list)
@@ -1033,6 +1127,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             .flatMapLatest { q ->
                 if (q.isEmpty()) flowOf(emptyList()) else graph.catalogRepository.searchSeries(q)
             }
+            .hidingLocked(lockedSeriesCats) { it.categoryId }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -1041,6 +1136,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             .flatMapLatest { q ->
                 if (q.length < 2) flowOf(emptyList()) else graph.catalogRepository.searchMovies(q)
             }
+            .hidingLocked(lockedMovieCats) { it.categoryId }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -1049,6 +1145,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             .flatMapLatest { q ->
                 if (q.length < 2) flowOf(emptyList()) else graph.catalogRepository.searchSeries(q)
             }
+            .hidingLocked(lockedSeriesCats) { it.categoryId }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun toggleMovieFavourite(movie: Movie) {

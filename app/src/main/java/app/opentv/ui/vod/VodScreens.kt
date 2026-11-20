@@ -92,6 +92,7 @@ fun MoviesScreen(
     isSyncing: Boolean,
     viewModel: VodViewModel = viewModel(),
 ) {
+    val pinGate = app.opentv.ui.parental.rememberPinGate()
     val categories by viewModel.movieCategories.collectAsState()
     val movieGroups by viewModel.movieGroups.collectAsState()
     val searchGroups by viewModel.movieSearchGroups.collectAsState()
@@ -169,10 +170,12 @@ fun MoviesScreen(
                         label = cat.name,
                         selected = selectedCategory == cat.id && searchQuery.isEmpty(),
                         onClick = {
-                            selectedCategory = cat.id
-                            searchQuery = ""
-                            viewModel.setMovieSearchQuery("")
-                            viewModel.selectMovieCategory(cat.id)
+                            pinGate("movie:${cat.id}") {
+                                selectedCategory = cat.id
+                                searchQuery = ""
+                                viewModel.setMovieSearchQuery("")
+                                viewModel.selectMovieCategory(cat.id)
+                            }
                         },
                     )
                 }
@@ -216,6 +219,7 @@ fun SeriesScreen(
     isSyncing: Boolean,
     viewModel: VodViewModel = viewModel(),
 ) {
+    val pinGate = app.opentv.ui.parental.rememberPinGate()
     val categories by viewModel.seriesCategories.collectAsState()
     val categorySeries by viewModel.series.collectAsState()
     val searchResults by viewModel.seriesSearchResults.collectAsState()
@@ -293,10 +297,12 @@ fun SeriesScreen(
                         label = cat.name,
                         selected = selectedCategory == cat.id && searchQuery.isEmpty(),
                         onClick = {
-                            selectedCategory = cat.id
-                            searchQuery = ""
-                            viewModel.setSeriesSearchQuery("")
-                            viewModel.selectSeriesCategory(cat.id)
+                            pinGate("series:${cat.id}") {
+                                selectedCategory = cat.id
+                                searchQuery = ""
+                                viewModel.setSeriesSearchQuery("")
+                                viewModel.selectSeriesCategory(cat.id)
+                            }
                         },
                     )
                 }

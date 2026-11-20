@@ -83,9 +83,33 @@ class AppSettings private constructor(context: Context) {
     private val _hiddenUnlocked = MutableStateFlow(false)
     val hiddenUnlocked: StateFlow<Boolean> = _hiddenUnlocked.asStateFlow()
 
+    /**
+     * Locked categories the correct PIN has been entered for this session (not persisted). Keys are
+     * unified across content types: a live group key as-is, `movie:<id>` and `series:<id>` for VOD.
+     */
+    private val _unlockedCategories = MutableStateFlow<Set<String>>(emptySet())
+    val unlockedCategories: StateFlow<Set<String>> = _unlockedCategories.asStateFlow()
+
+    fun unlockCategory(key: String) {
+        _unlockedCategories.value = _unlockedCategories.value + key
+    }
+
+    /** True when opening [key] must first be confirmed with the PIN. */
+    fun needsPin(key: String): Boolean =
+        _pinIsSet.value && key in _hiddenCategories.value && key !in _unlockedCategories.value
+
+    /**
+     * The category keys whose *content* must stay out of every list and search right now. With no PIN
+     * the "show hidden" switch lifts everything; with a PIN it only makes locked categories visible —
+     * each still needs the PIN once per session before its titles appear.
+     */
+    fun lockedKeys(hidden: Set<String>, showHidden: Boolean, unlocked: Set<String>, pinSet: Boolean): Set<String> =
+        if (!pinSet && showHidden) emptySet() else hidden - unlocked
+
     fun setPin(pin: String) {
         prefs.edit().putString(KEY_PIN_HASH, hashPin(pin)).apply()
         _pinIsSet.value = true
+        _unlockedCategories.value = emptySet()
     }
 
     fun clearPin() {
@@ -106,6 +130,7 @@ class AppSettings private constructor(context: Context) {
 
     fun setHiddenUnlocked(unlocked: Boolean) {
         _hiddenUnlocked.value = unlocked
+        if (!unlocked) _unlockedCategories.value = emptySet()
     }
 
     private fun hashPin(pin: String): String {

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -81,6 +82,7 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
     LIVE(R.string.nav_live_tv, Icons.Filled.LiveTv),
     MOVIES(R.string.nav_movies, Icons.Filled.Movie),
     SHOWS(R.string.nav_shows, Icons.Filled.Tv),
+    ACCOUNT(R.string.nav_account, Icons.Filled.Person),
     RECORDINGS(R.string.nav_recordings, Icons.Filled.FiberManualRecord),
 }
 
@@ -104,6 +106,8 @@ fun MainScreen(
     onOpenProfiles: () -> Unit,
     onPlayRecording: (Recording) -> Unit,
     onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit,
+    onEditSource: (app.opentv.data.model.Source) -> Unit,
+    onLogout: () -> Unit,
     activeProfileName: String,
 ) {
     // Content-type toggles: a switched-off type has its tab hidden here (and its sync skipped in
@@ -120,6 +124,7 @@ fun MainScreen(
             if (moviesEnabled) add(Tab.MOVIES)
             if (seriesEnabled) add(Tab.SHOWS)
             if (isEmpty()) add(Tab.LIVE)
+            add(Tab.ACCOUNT)
         }
     }
     // The default/home tab is the first visible one — Live TV normally, otherwise the first type
@@ -219,6 +224,11 @@ fun MainScreen(
                     onOpenSearch = onOpenSearch,
                     hasSources = hasSources,
                     isSyncing = isSyncing,
+                )
+                Tab.ACCOUNT -> app.opentv.ui.account.AccountScreen(
+                    onEditSource = onEditSource,
+                    onLogout = onLogout,
+                    onAddSource = onAddSource,
                 )
                 Tab.RECORDINGS -> RecordingsScreen(onPlay = onPlayRecording)
             }
@@ -338,9 +348,14 @@ private fun NavRail(
         Spacer(Modifier.height(1.dp).fillMaxWidth())
         Spacer(Modifier.weight(1f))
 
-        RailItem(Icons.Filled.Refresh, stringResource(R.string.nav_sync), expanded, false, onOpenSync)
-        RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
-        RailItem(Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false, onOpenSettings)
+        RailItem(Icons.Filled.Refresh, stringResource(R.string.nav_sync), expanded, false, onClick = onOpenSync)
+        RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onClick = onOpenSearch)
+        val hasUpdate by app.opentv.update.UpdateHub.pending.collectAsState()
+        RailItem(
+            Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false,
+            badge = hasUpdate != null,
+            onClick = onOpenSettings,
+        )
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -351,6 +366,7 @@ private fun RailItem(
     label: String,
     expanded: Boolean,
     selected: Boolean,
+    badge: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -374,7 +390,12 @@ private fun RailItem(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = label, tint = tint)
+        Box {
+            Icon(icon, contentDescription = label, tint = tint)
+            if (badge) {
+                app.opentv.update.UpdateBadge(Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-6).dp))
+            }
+        }
         if (expanded) {
             Spacer(Modifier.width(14.dp))
             Text(

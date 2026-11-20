@@ -4,7 +4,9 @@
 package app.opentv.ui.onboarding
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,11 +40,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.opentv.R
 import app.opentv.core.AppConfig
@@ -87,14 +91,15 @@ fun AddSourceScreen(
 
     val canSubmit = username.isNotBlank() && password.isNotBlank()
 
-    Column(
+    Box(modifier = Modifier.fillMaxSize()) {
+      Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-    ) {
+      ) {
         Column(
             modifier = Modifier.widthIn(max = 480.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -191,6 +196,48 @@ fun AddSourceScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+            }
+        }
+      }
+
+      if (ui.syncing) {
+          LoadingOverlay(stage = ui.syncMessage ?: "Autenticando…")
+      }
+    }
+}
+
+/**
+ * Full-screen loading scrim shown while [AddSourceScreen] authenticates, saves and syncs the
+ * initial catalogue. [stage] is the current status line from [SourcesViewModel.UiState.syncMessage]
+ * — "Autenticando…", "Carregando canais ao vivo…", "Carregando catálogo de filmes e séries…" and
+ * finally "Concluído!" before handing off to the home screen.
+ */
+@Composable
+private fun LoadingOverlay(stage: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(32.dp)
+                    .widthIn(min = 280.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(48.dp))
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = stage,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }

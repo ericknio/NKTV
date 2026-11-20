@@ -51,7 +51,21 @@ import androidx.compose.ui.unit.dp
 import app.opentv.BuildConfig
 import app.opentv.R
 import app.opentv.core.ServiceLocator
+import app.opentv.core.findActivity
 import app.opentv.update.UpdateChecker
+import app.opentv.update.UpdateHub
+import app.opentv.update.UpdateUiState
+import app.opentv.update.UpdateViewModel
+import androidx.activity.ComponentActivity
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 
 /**
@@ -66,6 +80,10 @@ fun AboutScreen(onBack: () -> Unit) {
     var updateLine by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
     var showPatchNotes by remember { mutableStateOf(false) }
+    val pendingUpdate by UpdateHub.pending.collectAsState()
+    // Same instance UpdateGate uses, so the download dialog it draws reflects this install.
+    val updateViewModel: UpdateViewModel = (context.findActivity() as? ComponentActivity)
+        ?.let { viewModel(viewModelStoreOwner = it) } ?: viewModel()
 
     if (showPatchNotes) {
         AlertDialog(
@@ -113,6 +131,41 @@ fun AboutScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(20.dp))
 
         Section(stringResource(R.string.about_version)) {
+            pendingUpdate?.let { update ->
+                val focusRequester = remember { FocusRequester() }
+                LaunchedEffect(update.versionName) { runCatching { focusRequester.requestFocus() } }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text(
+                            "Nova atualização disponível: v${update.versionName.removePrefix("v")}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            update.notes.takeIf { it.isNotBlank() }
+                                ?: "Atualize para receber as últimas melhorias e correções.",
+                            modifier = Modifier.padding(top = 6.dp),
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Button(
+                            onClick = {
+                                UpdateHub.state.value = UpdateUiState.Available(update)
+                                updateViewModel.install()
+                            },
+                            modifier = Modifier.padding(top = 12.dp).focusRequester(focusRequester),
+                        ) { Text("Atualizar Agora") }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
             Text("NKTV Player v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -132,10 +185,8 @@ fun AboutScreen(onBack: () -> Unit) {
                             }
                             // Raise the shared update prompt right here — UpdateGate overlays every
                             // screen, so the install dialog appears over About immediately.
-                            if (update != null) {
-                                app.opentv.update.UpdateHub.state.value =
-                                    app.opentv.update.UpdateUiState.Available(update)
-                            }
+                            UpdateHub.pending.value = update
+                            if (update != null) UpdateHub.state.value = UpdateUiState.Available(update)
                             checking = false
                         }
                     },
@@ -207,9 +258,19 @@ private data class PatchNote(
 private object PatchNotesData {
     val notes = listOf(
         PatchNote(
-            version = "1.0.6",
+            version = "1.0.7",
             date = "Novembro 2026",
             isLatest = true,
+            changes = listOf(
+                "Login Seguro: Validação antes de salvar e tela de carregamento de conteúdo.",
+                "Aba Minha Conta: Gestão completa de usuário e senha na barra lateral.",
+                "Notificação Discreta: Alerta com badge '1' em Configurações e Sobre.",
+                "Controle dos Pais Total: Bloqueio por PIN em Ao Vivo, Filmes e Séries.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.6",
+            date = "Novembro 2026",
             changes = listOf(
                 "Desempenho otimizado para TVs e Mi Stick (sem engasgos).",
                 "Tela cheia imersiva (sem barras do sistema atrapalhando).",

@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,12 +72,13 @@ fun SettingsHubScreen(
     onOpenAbout: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val hasUpdate by app.opentv.update.UpdateHub.pending.collectAsState()
     val entries = listOf(
         HubEntry(Icons.Filled.LiveTv, stringResource(R.string.settings_guide_title), stringResource(R.string.settings_guide_subtitle), onOpenGuide),
         HubEntry(Icons.Filled.GridView, stringResource(R.string.common_channels), stringResource(R.string.settings_channels_subtitle), onOpenChannels),
         HubEntry(Icons.Filled.Tune, stringResource(R.string.settings_display_title), stringResource(R.string.settings_display_subtitle), onOpenDisplay),
         HubEntry(Icons.Filled.Lock, stringResource(R.string.settings_parental_title), stringResource(R.string.settings_parental_subtitle), onOpenParental),
-        HubEntry(Icons.Filled.Info, stringResource(R.string.settings_about_title), stringResource(R.string.settings_about_subtitle), onOpenAbout),
+        HubEntry(Icons.Filled.Info, stringResource(R.string.settings_about_title), stringResource(R.string.settings_about_subtitle), onOpenAbout, badge = hasUpdate != null),
     )
 
     Column(
@@ -108,6 +110,7 @@ private data class HubEntry(
     val title: String,
     val subtitle: String,
     val onClick: () -> Unit,
+    val badge: Boolean = false,
 )
 
 @Composable
@@ -152,6 +155,7 @@ private fun HubRow(entry: HubEntry) {
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (entry.badge) app.opentv.update.UpdateBadge()
     }
 }
 

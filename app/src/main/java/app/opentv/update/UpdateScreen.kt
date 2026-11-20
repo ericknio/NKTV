@@ -7,11 +7,13 @@ package app.opentv.update
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -19,9 +21,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -43,25 +48,8 @@ fun UpdateGate(viewModel: UpdateViewModel = viewModel()) {
     when (val s = state) {
         UpdateUiState.Idle -> Unit
 
-        is UpdateUiState.Available -> AlertDialog(
-            onDismissRequest = viewModel::dismiss,
-            confirmButton = { TextButton(onClick = viewModel::install) { Text("Atualizar") } },
-            dismissButton = { TextButton(onClick = viewModel::dismiss) { Text("Mais tarde") } },
-            title = { Text("Atualização disponível") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("NKTV ${s.update.versionName} está disponível. Você tem a versão ${BuildConfig.VERSION_NAME}.")
-                    if (s.update.notes.isNotBlank()) {
-                        Text(
-                            text = s.update.notes,
-                            modifier = Modifier.padding(top = 12.dp),
-                            maxLines = 12,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            },
-        )
+        // A newly found update never interrupts the user: it lights the badge on Settings → About.
+        is UpdateUiState.Available -> Unit
 
         is UpdateUiState.Downloading -> AlertDialog(
             onDismissRequest = {}, // a download in flight should not be dismissed by a stray click
@@ -107,6 +95,22 @@ sealed interface UpdateUiState {
  */
 object UpdateHub {
     val state = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+
+    /** The newer build found by a check, kept until the app is replaced — drives the "1" badges. */
+    val pending = MutableStateFlow<UpdateChecker.Update?>(null)
+}
+
+/** Small red "1" dot shown over Settings and the About row while [UpdateHub.pending] is set. */
+@Composable
+fun UpdateBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(18.dp)
+            .background(Color(0xFFE53935), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("1", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
 }
 
 class UpdateViewModel(app: Application) : AndroidViewModel(app) {
@@ -134,7 +138,10 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
 
             val update = checker.check()
             prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
-            if (update != null) _state.value = UpdateUiState.Available(update)
+            if (update != null) {
+                UpdateHub.pending.value = update
+                _state.value = UpdateUiState.Available(update)
+            }
         }
     }
 
@@ -143,7 +150,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
             is UpdateUiState.Available -> s.update
             is UpdateUiState.Failed -> s.update
             is UpdateUiState.Downloading -> s.update
-            UpdateUiState.Idle -> return
+            UpdateUiState.Idle -> UpdateHub.pending.value ?: return
         }
         viewModelScope.launch {
             _state.value = UpdateUiState.Downloading(update, 0f)

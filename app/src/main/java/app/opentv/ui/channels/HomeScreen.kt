@@ -117,6 +117,7 @@ fun HomeScreen(
     val previewEnabled by settings.guidePreviewVideo.collectAsState()
     val channelLayout by settings.channelLayout.collectAsState()
 
+    val pinGate = app.opentv.ui.parental.rememberPinGate()
     val categories by viewModel.visibleCategoryGroups.collectAsState()
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
@@ -327,7 +328,7 @@ fun HomeScreen(
                     RailEntry(
                         label = group.label,
                         selected = groupSelected,
-                        onClick = { viewModel.selectCategory(group.key) },
+                        onClick = { pinGate(group.key) { viewModel.selectCategory(group.key) } },
                         modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }

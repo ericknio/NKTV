@@ -26,6 +26,7 @@
     <string name="nav_live_tv">Ao Vivo</string>
     <string name="nav_movies">Filmes</string>
     <string name="nav_shows">Séries</string>
+    <string name="nav_account">Minha Conta</string>
     <string name="nav_recordings">Gravações</string>
     <string name="nav_sync">Sincronizar</string>
     <string name="sync_confirm_title">Sincronizar Conteúdo</string>

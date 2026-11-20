@@ -5,6 +5,18 @@
  */
 package app.opentv.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import app.opentv.data.model.StreamKind
+import app.opentv.ui.parental.PinDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,14 +74,27 @@ fun ParentalControlsScreen(
     val pinIsSet by settings.pinIsSet.collectAsState()
     val hidden by settings.hiddenCategories.collectAsState()
     val unlocked by settings.hiddenUnlocked.collectAsState()
-    val categories by channelsViewModel.categoryGroups.collectAsState()
+    val liveCategories by channelsViewModel.categoryGroups.collectAsState()
+    val catalog = remember { ServiceLocator.get(context).catalogRepository }
+    val movieCategories by remember { catalog.observeCategories(StreamKind.MOVIE) }.collectAsState(emptyList())
+    val seriesCategories by remember { catalog.observeCategories(StreamKind.SERIES) }.collectAsState(emptyList())
+    var tab by remember { mutableIntStateOf(0) }
+
+    // One unified list of lockable keys per tab: a live group key as-is (existing installs keep their
+    // saved choices), "movie:<id>" and "series:<id>" for the VOD categories.
+    val rows = when (tab) {
+        0 -> liveCategories.map { LockRow(it.key, it.label) }
+        1 -> movieCategories.distinctBy { it.id }.map { LockRow("movie:${it.id}", it.name) }
+        else -> seriesCategories.distinctBy { it.id }.map { LockRow("series:${it.id}", it.name) }
+    }
 
     var authed by remember { mutableStateOf(false) }
 
     if (pinIsSet && !authed) {
-        PinGate(
-            onCancel = onBack,
-            onSubmit = { entered -> settings.verifyPin(entered).also { if (it) authed = true } },
+        PinDialog(
+            verify = settings::verifyPin,
+            onSuccess = { authed = true },
+            onDismiss = onBack,
         )
         return
     }
@@ -121,7 +146,15 @@ fun ParentalControlsScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        if (categories.isEmpty()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TabChip("Canais Ao Vivo", tab == 0) { tab = 0 }
+            TabChip(stringResource(R.string.nav_movies), tab == 1) { tab = 1 }
+            TabChip(stringResource(R.string.nav_shows), tab == 2) { tab = 2 }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        if (rows.isEmpty()) {
             Text(
                 stringResource(R.string.parental_no_categories),
                 style = MaterialTheme.typography.bodyMedium,
@@ -136,26 +169,79 @@ fun ParentalControlsScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
             ) {
-                categories.forEach { group ->
-                    Card {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(group.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                            Switch(
-                                checked = group.key in hidden,
-                                onCheckedChange = { on ->
-                                    val next = hidden.toMutableSet().apply { if (on) add(group.key) else remove(group.key) }
-                                    settings.setHiddenCategories(next)
-                                },
-                            )
-                        }
-                    }
+                rows.forEach { row ->
+                    LockToggleRow(
+                        label = row.label,
+                        checked = row.key in hidden,
+                        onToggle = { on ->
+                            val next = hidden.toMutableSet().apply { if (on) add(row.key) else remove(row.key) }
+                            settings.setHiddenCategories(next)
+                        },
+                    )
                 }
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+private data class LockRow(val key: String, val label: String)
+
+/** A tab button with a clear focus highlight, so the remote can see where it is. */
+@Composable
+private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                when {
+                    focused -> MaterialTheme.colorScheme.primary
+                    selected -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.surfaceVariant
+                },
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = when {
+                focused -> MaterialTheme.colorScheme.onPrimary
+                selected -> MaterialTheme.colorScheme.onPrimaryContainer
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+        )
+    }
+}
+
+/** The whole row is the focus target and toggles on OK/Enter; the Switch just shows the state. */
+@Composable
+private fun LockToggleRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (focused) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                else Modifier,
+            )
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onToggle)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -235,28 +321,3 @@ private fun PinField(label: String, value: String, onChange: (String) -> Unit) {
     )
 }
 
-@Composable
-private fun PinGate(onCancel: () -> Unit, onSubmit: (String) -> Boolean) {
-    var pin by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
-
-    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(stringResource(R.string.parental_enter_pin), style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(16.dp))
-            PinField(stringResource(R.string.parental_pin), pin) { if (it.length <= 4) pin = it.filter(Char::isDigit) }
-            if (error) {
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.parental_wrong_pin), color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    enabled = pin.length == 4,
-                    onClick = { if (!onSubmit(pin)) { error = true; pin = "" } },
-                ) { Text(stringResource(R.string.parental_unlock)) }
-                OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.common_back)) }
-            }
-        }
-    }
-}
