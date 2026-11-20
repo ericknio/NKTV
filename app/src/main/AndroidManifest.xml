@@ -47,6 +47,7 @@
     <application
         android:name=".OpenTvApp"
         android:allowBackup="false"
+        android:largeHeap="true"
         android:banner="@drawable/banner"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
@@ -117,6 +118,15 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Reopens the app after an in-place update replaces the package. -->
+        <receiver
+            android:name=".update.UpdateReopenReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

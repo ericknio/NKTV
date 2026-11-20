@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -306,7 +307,7 @@ class ManagerServer(
     // ---- Routes --------------------------------------------------------------------------------
 
     /** `{ sources:[{id,name}], categories:[{id,label,sourceId,count}] }` */
-    private fun metaJson(): String = runBlocking {
+    private fun metaJson(): String = runBlocking(Dispatchers.IO) { withTimeout(5_000L) {
         val sources = catalog.enabledSources()
         val sourceIds = sources.map { it.id }.toSet()
         val counts = catalog.categoryChannelCounts()
@@ -325,17 +326,17 @@ class ManagerServer(
             MetaDto.serializer(),
             MetaDto(sources = sources.map { SourceDto(it.id, it.name) }, categories = categories),
         )
-    }
+    } }
 
     /** `GET /channels?cat=<id>[&source=<id>]` → the category's channels, hidden included. */
-    private fun channelsJson(query: Map<String, String>): String = runBlocking {
+    private fun channelsJson(query: Map<String, String>): String = runBlocking(Dispatchers.IO) { withTimeout(5_000L) {
         val serializer = ListSerializer(ChannelDto.serializer())
         val cat = query["cat"]
-        if (cat.isNullOrBlank()) return@runBlocking json.encodeToString(serializer, emptyList())
+        if (cat.isNullOrBlank()) return@withTimeout json.encodeToString(serializer, emptyList())
         val source = query["source"]?.toLongOrNull()
         val rows = catalog.channelsInCategoryForManager(source, cat).map { it.toDto() }
         json.encodeToString(serializer, rows)
-    }
+    } }
 
     /** `POST /channel {id, hidden?|favourite?|name?}` → apply the given field(s). */
     private fun handleChannelPatch(output: OutputStream, body: String) {
@@ -345,12 +346,12 @@ class ManagerServer(
             return
         }
         // Unknown ids simply update zero rows — harmless, so no existence check.
-        runBlocking {
+        runBlocking(Dispatchers.IO) { withTimeout(5_000L) {
             patch.hidden?.let { catalog.setChannelHidden(patch.id, it) }
             patch.favourite?.let { catalog.setChannelFavourite(patch.id, it) }
             // A blank name clears the rename back to the provider's own (see setChannelCustomName).
             patch.name?.let { catalog.setChannelCustomName(patch.id, it) }
-        }
+        } }
         writeOk(output)
     }
 
@@ -361,9 +362,9 @@ class ManagerServer(
             output.write(PairingHttp.httpResponse("400 Bad Request", "text/plain", "Bad request."))
             return
         }
-        runBlocking {
+        runBlocking(Dispatchers.IO) { withTimeout(5_000L) {
             req.ids.forEachIndexed { index, id -> if (id > 0L) catalog.setChannelSortIndex(id, index) }
-        }
+        } }
         writeOk(output)
     }
 
@@ -439,15 +440,15 @@ class ManagerServer(
             writeJson(output, AddResultDto.serializer(), AddResultDto(ok = false, error = "Fill in the required fields for this provider type."))
             return
         }
-        val result = runBlocking {
+        val result = runBlocking(Dispatchers.IO) { withTimeout(5_000L) {
             val id = sourceRepository.save(draft)
             val saved = sourceRepository.byId(id)
-                ?: return@runBlocking AddResultDto(ok = false, error = "Could not save the source.")
+                ?: return@withTimeout AddResultDto(ok = false, error = "Could not save the source.")
             when (val r = catalog.syncLive(saved, System.currentTimeMillis())) {
                 is CatalogRepository.SyncResult.Success -> AddResultDto(ok = true, channels = r.channelCount)
                 is CatalogRepository.SyncResult.Failed -> AddResultDto(ok = false, error = r.reason)
             }
-        }
+        } }
         writeJson(output, AddResultDto.serializer(), result)
     }
 
@@ -458,7 +459,7 @@ class ManagerServer(
             writeJson(output, TestResultDto.serializer(), TestResultDto(ok = false, error = "Fill in the required fields for this provider type."))
             return
         }
-        val result = runBlocking { sourceRepository.test(draft) }
+        val result = runBlocking(Dispatchers.IO) { withTimeout(5_000L) { sourceRepository.test(draft) } }
         val dto = if (result.isSuccess) {
             TestResultDto(ok = true, message = result.getOrNull())
         } else {

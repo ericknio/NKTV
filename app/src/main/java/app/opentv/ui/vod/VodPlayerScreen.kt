@@ -14,6 +14,7 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -95,10 +96,7 @@ import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
 import app.opentv.player.PlayerController
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -124,7 +122,7 @@ fun VodPlayerScreen(
     val view = LocalView.current
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
-    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     // A recording that's still being written plays through the tail-following source. It behaves a
     // little differently in the transport: the "length" is how much has been recorded so far, which
     // keeps growing, and seeking is bounded to that recorded extent.
@@ -162,10 +160,17 @@ fun VodPlayerScreen(
 
     var controlsVisible by remember { mutableStateOf(true) }
     var interaction by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // 0 = none; odd = rewind, even non-zero = forward (alternates to force LaunchedEffect relaunch)
+    var seekFlash by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var seekFlashCount by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val barFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
 
     fun reveal() { controlsVisible = true; interaction++ }
+
+    LaunchedEffect(seekFlashCount) {
+        if (seekFlash != 0) { delay(700); seekFlash = 0 }
+    }
 
     suspend fun savePosition() {
         val player = controller.player
@@ -202,7 +207,6 @@ fun VodPlayerScreen(
             }
             scope.launch { savePosition() }
             controller.release()
-            scope.cancel()
         }
     }
 
@@ -287,6 +291,8 @@ fun VodPlayerScreen(
             .onPreviewKeyEvent { event ->
                 when {
                     event.key == Key.Back || event.key == Key.Escape -> false
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionRight -> { controller.seekForward(); true }
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionLeft -> { controller.seekBackward(); true }
                     event.type == KeyEventType.KeyDown && !controlsVisible -> { reveal(); true }
                     event.type == KeyEventType.KeyDown -> { interaction++; false }
                     else -> false
@@ -295,7 +301,19 @@ fun VodPlayerScreen(
             .focusRequester(rootFocus)
             .focusable()
             .pointerInput(Unit) {
-                detectTapGestures { if (controlsVisible) controlsVisible = false else reveal() }
+                detectTapGestures(
+                    onTap = { if (controlsVisible) controlsVisible = false else reveal() },
+                    onDoubleTap = { offset ->
+                        if (offset.x > size.width / 2f) {
+                            seekRelative(10_000)
+                            seekFlash = 1
+                        } else {
+                            seekRelative(-10_000)
+                            seekFlash = -1
+                        }
+                        seekFlashCount++
+                    },
+                )
             },
     ) {
         AndroidView(
@@ -313,6 +331,33 @@ fun VodPlayerScreen(
                 }
             },
         )
+
+        // Double-tap seek flash overlay (YouTube-style)
+        val isForward = seekFlash > 0
+        AnimatedVisibility(
+            visible = seekFlash != 0,
+            enter = fadeIn(tween(80)),
+            exit = fadeOut(tween(300)),
+            modifier = Modifier.align(if (isForward) Alignment.CenterEnd else Alignment.CenterStart),
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(140.dp)
+                    .fillMaxSize(0.6f)
+                    .clip(if (isForward)
+                        RoundedCornerShape(topStart = 100.dp, bottomStart = 100.dp)
+                    else
+                        RoundedCornerShape(topEnd = 100.dp, bottomEnd = 100.dp))
+                    .background(Color.White.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (isForward) "+10s ▶▶" else "◀◀ 10s",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+        }
 
         when (val current = state) {
             is PlayerController.State.Buffering ->

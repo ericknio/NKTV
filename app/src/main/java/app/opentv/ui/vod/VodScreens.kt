@@ -28,9 +28,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
@@ -52,9 +55,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -63,6 +73,7 @@ import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.parser.displayTitle
+import app.opentv.data.repo.MovieVariantGroup
 import app.opentv.ui.VodViewModel
 import coil.compose.AsyncImage
 
@@ -75,16 +86,18 @@ import coil.compose.AsyncImage
 @Composable
 fun MoviesScreen(
     onOpenMovie: (Movie) -> Unit,
-    onResume: (mediaKey: String, url: String, title: String) -> Unit,
+    onResume: (mediaKey: String, url: String, title: String, seriesRoomId: Long?) -> Unit,
     onOpenSearch: () -> Unit,
     hasSources: Boolean,
     isSyncing: Boolean,
     viewModel: VodViewModel = viewModel(),
 ) {
     val categories by viewModel.movieCategories.collectAsState()
-    val categoryMovies by viewModel.movies.collectAsState()
-    val searchResults by viewModel.movieSearchResults.collectAsState()
+    val movieGroups by viewModel.movieGroups.collectAsState()
+    val searchGroups by viewModel.movieSearchGroups.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
+    val continueWatchingItems by viewModel.continueWatching.collectAsState()
+    val movieCwItems = remember(continueWatchingItems) { continueWatchingItems.filter { it.mediaKey.startsWith("movie:") } }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
@@ -126,6 +139,19 @@ fun MoviesScreen(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                if (movieCwItems.isNotEmpty()) {
+                    item {
+                        VodRailEntry(
+                            label = stringResource(R.string.vod_continue_watching),
+                            selected = selectedCategory == "__cw__" && searchQuery.isEmpty(),
+                            onClick = {
+                                selectedCategory = "__cw__"
+                                searchQuery = ""
+                                viewModel.setMovieSearchQuery("")
+                            },
+                        )
+                    }
+                }
                 item {
                     VodRailEntry(
                         label = stringResource(R.string.vod_all),
@@ -155,25 +181,26 @@ fun MoviesScreen(
 
         Box(Modifier.weight(1f).fillMaxHeight()) {
             val isSearching = searchQuery.isNotBlank()
-            val displayedMovies = if (isSearching) searchResults else categoryMovies
+            val displayedGroups = if (isSearching) searchGroups else movieGroups
             when {
-                displayedMovies.isEmpty() && isSearching -> {
+                selectedCategory == "__cw__" -> ContinueWatchingRow(movieCwItems, onResume)
+                displayedGroups.isEmpty() && isSearching -> {
                     EmptyVod(
                         "Nenhum filme encontrado",
                         "Tente buscar por outro termo.",
                     )
                 }
-                displayedMovies.isEmpty() && (vodLoading || isSyncing) -> {
+                displayedGroups.isEmpty() && (vodLoading || isSyncing) -> {
                     LoadingVod(stringResource(R.string.vod_loading_movies))
                 }
-                displayedMovies.isEmpty() -> {
+                displayedGroups.isEmpty() -> {
                     EmptyVod(
                         stringResource(R.string.vod_no_movies),
                         stringResource(R.string.vod_no_movies_provider),
                     )
                 }
                 else -> {
-                    MovieCategoryGrid(displayedMovies, viewModel, onOpenMovie)
+                    MovieCategoryGrid(displayedGroups, onOpenMovie)
                 }
             }
         }
@@ -183,7 +210,7 @@ fun MoviesScreen(
 @Composable
 fun SeriesScreen(
     onOpenSeries: (Series) -> Unit,
-    onResume: (mediaKey: String, url: String, title: String) -> Unit,
+    onResume: (mediaKey: String, url: String, title: String, seriesRoomId: Long?) -> Unit,
     onOpenSearch: () -> Unit,
     hasSources: Boolean,
     isSyncing: Boolean,
@@ -193,6 +220,8 @@ fun SeriesScreen(
     val categorySeries by viewModel.series.collectAsState()
     val searchResults by viewModel.seriesSearchResults.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
+    val continueWatchingItems by viewModel.continueWatching.collectAsState()
+    val seriesCwItems = remember(continueWatchingItems) { continueWatchingItems.filter { it.mediaKey.startsWith("ep:") } }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
@@ -234,6 +263,19 @@ fun SeriesScreen(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                if (seriesCwItems.isNotEmpty()) {
+                    item {
+                        VodRailEntry(
+                            label = stringResource(R.string.vod_continue_watching),
+                            selected = selectedCategory == "__cw__" && searchQuery.isEmpty(),
+                            onClick = {
+                                selectedCategory = "__cw__"
+                                searchQuery = ""
+                                viewModel.setSeriesSearchQuery("")
+                            },
+                        )
+                    }
+                }
                 item {
                     VodRailEntry(
                         label = stringResource(R.string.vod_all),
@@ -265,6 +307,7 @@ fun SeriesScreen(
             val isSearching = searchQuery.isNotBlank()
             val displayedSeries = if (isSearching) searchResults else categorySeries
             when {
+                selectedCategory == "__cw__" -> ContinueWatchingRow(seriesCwItems, onResume)
                 displayedSeries.isEmpty() && isSearching -> {
                     EmptyVod(
                         "Nenhuma série encontrada",
@@ -296,10 +339,19 @@ private fun VodSearchBar(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
         singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            imeAction = ImeAction.Search,
+            showKeyboardOnFocus = false,
+        ),
+        keyboardActions = KeyboardActions(
+            onSearch = { keyboardController?.hide() },
+        ),
         textStyle = MaterialTheme.typography.bodyMedium.copy(
             color = MaterialTheme.colorScheme.onSurface,
         ),
@@ -318,6 +370,7 @@ private fun VodSearchBar(
                         color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
                         shape = RoundedCornerShape(8.dp),
                     )
+                    .clickable { keyboardController?.show() }
                     .padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -353,7 +406,23 @@ private fun VodSearchBar(
                 }
             }
         },
-        modifier = modifier.onFocusChanged { focused = it.isFocused },
+        modifier = modifier
+            .onFocusChanged {
+                focused = it.isFocused
+                if (!it.isFocused) {
+                    keyboardController?.hide()
+                }
+            }
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter)
+                ) {
+                    keyboardController?.show()
+                    true
+                } else {
+                    false
+                }
+            },
     )
 }
 
@@ -396,10 +465,14 @@ private fun VodRailEntry(
 
 /** One category's films as a poster grid. Quality variants collapse to one card, badged. */
 @Composable
-private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOpenMovie: (Movie) -> Unit) {
-    if (movies.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_movies)); return }
-    val groups = remember(movies) { viewModel.collapseVariants(movies) }
+private fun MovieCategoryGrid(groups: List<MovieVariantGroup>, onOpenMovie: (Movie) -> Unit) {
+    if (groups.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_movies)); return }
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(groups) {
+        gridState.scrollToItem(0)
+    }
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Adaptive(minSize = 140.dp),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -430,7 +503,12 @@ private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOp
 @Composable
 private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> Unit) {
     if (series.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_shows)); return }
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(series) {
+        gridState.scrollToItem(0)
+    }
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Adaptive(minSize = 140.dp),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -616,7 +694,7 @@ private fun Badge(text: String, modifier: Modifier = Modifier, highlight: Boolea
 @Composable
 internal fun ContinueWatchingRow(
     items: List<VodViewModel.ResumeItem>,
-    onResume: (mediaKey: String, url: String, title: String) -> Unit,
+    onResume: (mediaKey: String, url: String, title: String, seriesRoomId: Long?) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
         SectionHeader(stringResource(R.string.vod_continue_watching))
@@ -625,7 +703,7 @@ internal fun ContinueWatchingRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(items, key = { it.mediaKey }) { item ->
-                ResumeCard(item) { onResume(item.mediaKey, item.streamUrl, item.title) }
+                ResumeCard(item) { onResume(item.mediaKey, item.streamUrl, item.title, item.seriesRoomId) }
             }
         }
     }

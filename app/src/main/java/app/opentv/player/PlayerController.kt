@@ -475,7 +475,7 @@ class PlayerController(
         const val C_TIME_UNSET = androidx.media3.common.C.TIME_UNSET
 
         const val SWITCH_DEBOUNCE_MILLIS = 350L
-        const val SEEK_INCREMENT_MILLIS = 15_000L
+        const val SEEK_INCREMENT_MILLIS = 10_000L
         const val INITIAL_BACKOFF_MILLIS = 500L
         const val MAX_BACKOFF_MILLIS = 8_000L
         const val MAX_LOAD_RETRIES = 5

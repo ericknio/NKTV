@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -266,6 +267,8 @@ fun SeriesDetailScreen(
 ) {
     var series by remember(seriesId) { mutableStateOf<Series?>(null) }
     var moreLike by remember(seriesId) { mutableStateOf<List<Series>>(emptyList()) }
+    var resumeItem by remember(seriesId) { mutableStateOf<VodViewModel.ResumeItem?>(null) }
+    val playFocus = remember { FocusRequester() }
     val favFocus = remember { FocusRequester() }
 
     LaunchedEffect(seriesId) {
@@ -274,6 +277,7 @@ fun SeriesDetailScreen(
         if (loaded != null) {
             viewModel.loadEpisodes(loaded)
             moreLike = viewModel.moreLikeThisSeries(loaded)
+            resumeItem = viewModel.seriesLastEpisode(loaded.seriesId)
         }
     }
 
@@ -285,7 +289,7 @@ fun SeriesDetailScreen(
 
     LaunchedEffect(s.id) {
         delay(60)
-        runCatching { favFocus.requestFocus() }
+        runCatching { playFocus.requestFocus() }.onFailure { runCatching { favFocus.requestFocus() } }
     }
 
     // Group episodes by season (seasons ascending, episodes ordered within each) — the classic
@@ -295,14 +299,36 @@ fun SeriesDetailScreen(
             .mapValues { (_, eps) -> eps.sortedBy { it.episodeNumber } }
             .toSortedMap()
     }
+    val resumeEpKey = resumeItem?.mediaKey
+    val resumeItemSnapshot = resumeItem
+    val epProgressMap = remember(resumeEpKey, resumeItemSnapshot) {
+        val ri = resumeItemSnapshot
+        if (resumeEpKey != null && ri != null) mapOf(resumeEpKey to ri.progress) else emptyMap()
+    }
 
     LazyColumn(Modifier.fillMaxSize()) {
         item(key = "header") {
             DetailBackdrop(title = s.displayTitle, backdropUrl = s.backdropUrl, posterUrl = s.posterUrl, meta = seriesMeta(s)) {
+                val resume = resumeItem
+                val firstEp = remember(episodes) { episodes.minByOrNull { it.season * 1000 + it.episodeNumber } }
+                when {
+                    resume != null -> DetailButton(
+                        icon = Icons.Filled.PlayArrow,
+                        label = stringResource(R.string.vod_resume),
+                        primary = true,
+                        modifier = Modifier.focusRequester(playFocus),
+                    ) { onPlayEpisode(resume.mediaKey, resume.streamUrl, resume.title) }
+                    firstEp != null -> DetailButton(
+                        icon = Icons.Filled.PlayArrow,
+                        label = stringResource(R.string.vod_watch_now),
+                        primary = true,
+                        modifier = Modifier.focusRequester(playFocus),
+                    ) { onPlayEpisode("ep:${firstEp.id}", firstEp.streamUrl, "S${firstEp.season}E${firstEp.episodeNumber} · ${firstEp.title}") }
+                    else -> Unit
+                }
                 DetailButton(
                     icon = if (s.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                     label = stringResource(if (s.favourite) R.string.common_remove_favourite else R.string.common_favourite),
-                    primary = true,
                     modifier = Modifier.focusRequester(favFocus),
                 ) {
                     viewModel.toggleSeriesFavourite(s)
@@ -335,7 +361,7 @@ fun SeriesDetailScreen(
                     SectionHeader(stringResource(R.string.vod_season, season))
                 }
                 items(eps, key = { it.id }) { ep ->
-                    EpisodeRow(ep, onPlayEpisode)
+                    EpisodeRow(ep, epProgressMap["ep:${ep.id}"] ?: 0f, onPlayEpisode)
                 }
             }
         }
@@ -647,11 +673,12 @@ private fun DetailButton(
     }
 }
 
-/** One episode row: season/episode marker, title, and a focus highlight; plays on click. */
+/** One episode row: season/episode marker, title, and a focus highlight; plays on click.
+ *  Pass progress > 0 to show a resume bar (the fraction already watched). */
 @Composable
-private fun EpisodeRow(ep: Episode, onPlay: (mediaKey: String, url: String, title: String) -> Unit) {
+private fun EpisodeRow(ep: Episode, progress: Float = 0f, onPlay: (mediaKey: String, url: String, title: String) -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 3.dp)
@@ -669,20 +696,28 @@ private fun EpisodeRow(ep: Episode, onPlay: (mediaKey: String, url: String, titl
                 onPlay("ep:${ep.id}", ep.streamUrl, "S${ep.season}E${ep.episodeNumber} · ${ep.title}")
             }
             .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            "S${ep.season}E${ep.episodeNumber}",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.width(72.dp),
-        )
-        Text(
-            ep.title,
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "S${ep.season}E${ep.episodeNumber}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.width(72.dp),
+            )
+            Text(
+                ep.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (progress > 0f) {
+            Spacer(Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
+            )
+        }
     }
 }
 

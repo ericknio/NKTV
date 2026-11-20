@@ -13,6 +13,7 @@
     <string name="common_selected">Selecionado</string>
     <string name="common_yes">Sim</string>
     <string name="common_no">Não</string>
+    <string name="common_close">Fechar</string>
     <string name="exit_title">Sair do NKTV?</string>
     <string name="exit_body">Deseja realmente sair e voltar para a tela inicial?</string>
     <string name="exit_confirm">Sair</string>
@@ -311,6 +312,8 @@
     <string name="about_up_to_date">Você está usando a versão mais recente.</string>
     <string name="about_checking">Verificando atualizações…</string>
     <string name="about_check_updates">Verificar atualizações</string>
+    <string name="about_patch_notes_btn">Notas da Versão</string>
+    <string name="about_patch_notes_title">Histórico de Atualizações</string>
     <string name="about_what_is_title">Sobre o aplicativo</string>
     <string name="about_what_is_body">NKTV Player para Android TV, Fire TV, TV Box e celulares.</string>
     <string name="about_built_open_title">NKTV Player</string>

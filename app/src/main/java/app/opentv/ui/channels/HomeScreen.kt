@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -60,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -138,6 +139,12 @@ fun HomeScreen(
     var lastSelectTime by remember { mutableLongStateOf(0L) }
     val previewSound by settings.guidePreviewSound.collectAsState()
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Scroll back to the top whenever the user switches category, source, or favourites
+    val channelListState = rememberLazyListState()
+    LaunchedEffect(selectedCategory, favouritesOnly, selectedSource) {
+        channelListState.scrollToItem(0)
+    }
 
     // ---- Category rail collapse ---------------------------------------------------
     var railExpanded by remember { mutableStateOf(true) }
@@ -408,6 +415,7 @@ fun HomeScreen(
                         onFocusRow = onFocusChannel,
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
+                        listState = channelListState,
                         modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
                     )
                 } else {
@@ -421,6 +429,7 @@ fun HomeScreen(
                         onProgramme = { row, _ -> onChannelClick(row) },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
+                        listState = channelListState,
                         modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
                     )
                 }
@@ -458,7 +467,7 @@ private fun ChannelRow(
     onClick: () -> Unit,
     onToggleFavourite: () -> Unit,
 ) {
-    val now = System.currentTimeMillis()
+    val now = remember { System.currentTimeMillis() }
     val background =
         if (isSelected) MaterialTheme.colorScheme.surfaceVariant
         else MaterialTheme.colorScheme.background

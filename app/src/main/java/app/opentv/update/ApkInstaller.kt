@@ -179,6 +179,7 @@ class ApkInstaller(private val http: OkHttpClient) {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    @Suppress("DEPRECATION")
     private fun launchInstaller(context: Context, apk: File) {
         val uri: Uri = FileProvider.getUriForFile(
             context,

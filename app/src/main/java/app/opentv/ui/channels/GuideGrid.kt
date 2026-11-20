@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -89,10 +91,13 @@ fun GuideGrid(
     // left-navigation carry focus into the already-visible rail.
     onExitLeftFromChannel: () -> Boolean = { false },
     dayOffset: Int = 0,
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
-    val now = System.currentTimeMillis()
+    // Frozen to the composition instant so the Long never changes value mid-session and the
+    // @Immutable Row lambdas can skip recomposition when only the parent recomposes.
+    val now = remember { System.currentTimeMillis() }
     // Jumping to another day resets the horizontal scroll to that day's start; a within-day time
     // drift (dayOffset unchanged) leaves the user's scroll position untouched.
     androidx.compose.runtime.LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
@@ -103,6 +108,7 @@ fun GuideGrid(
         TimeHeader(windowStartMillis, scroll)
 
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
@@ -139,10 +145,12 @@ fun ChannelList(
     onFocusRow: (ChannelsViewModel.Row) -> Unit,
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
 ) {
-    val now = System.currentTimeMillis()
+    val now = remember { System.currentTimeMillis() }
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -282,6 +290,11 @@ private fun ChannelListRow(
 
 @Composable
 private fun TimeHeader(windowStartMillis: Long, scroll: androidx.compose.foundation.ScrollState) {
+    // Cache the 48 formatted slot labels — recomputed only when the window start changes
+    // (i.e. on a half-hour tick or a day change), not on every recomposition.
+    val labels = remember(windowStartMillis) {
+        Array(HOURS_IN_WINDOW * 2) { i -> clockFormat.format(Date(windowStartMillis + i * HALF_HOUR_MS)) }
+    }
     Row(Modifier.fillMaxWidth().height(28.dp)) {
         // Empty corner above the channel column.
         Box(Modifier.width(CHANNEL_COLUMN))
@@ -290,15 +303,13 @@ private fun TimeHeader(windowStartMillis: Long, scroll: androidx.compose.foundat
                 .horizontalScroll(scroll)
                 .background(MaterialTheme.colorScheme.surface),
         ) {
-            // A label every half hour across the whole window.
-            repeat(HOURS_IN_WINDOW * 2) { i ->
-                val slotStart = windowStartMillis + i * HALF_HOUR_MS
+            labels.forEach { label ->
                 Box(
                     Modifier.width(HALF_HOUR_WIDTH).height(28.dp).padding(start = 6.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
-                        clockFormat.format(Date(slotStart)),
+                        label,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

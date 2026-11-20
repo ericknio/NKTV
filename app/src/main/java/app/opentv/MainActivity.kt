@@ -17,6 +17,9 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -97,6 +100,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hideSystemBars()
         handlePlayIntent(intent)
         val isTelevision = isRunningOnTelevision(this)
 
@@ -137,6 +141,20 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handlePlayIntent(intent)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemBars()
+        }
+    }
+
+    private fun hideSystemBars() {
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        insetsController.hide(WindowInsetsCompat.Type.systemBars())
     }
 
     private fun handlePlayIntent(intent: Intent?) {
@@ -189,6 +207,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        hideSystemBars()
         val graph = ServiceLocator.get(this)
         lifecycleScope.launch(Dispatchers.IO) {
             app.opentv.core.AppConfig.syncWithRemote(this@MainActivity, graph.sourceRepository)
@@ -356,10 +375,23 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onOpenSeries = { series ->
                         navController.navigate(Routes.seriesDetail(series.id))
                     },
-                    onResume = { key, url, title ->
+                    onResume = { key, url, title, seriesRoomId ->
+                        if (seriesRoomId != null) {
+                            navController.navigate(Routes.seriesDetail(seriesRoomId)) {
+                                launchSingleTop = true
+                            }
+                        } else if (key.startsWith("movie:")) {
+                            key.removePrefix("movie:").toLongOrNull()?.let {
+                                navController.navigate(Routes.movieDetail(it)) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        }
                         navController.navigate(
                             Routes.vodPlayer(key, url, title, "OpenTV/0.1 (Android)"),
-                        )
+                        ) {
+                            launchSingleTop = true
+                        }
                     },
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
                     onRefresh = {

@@ -10,13 +10,17 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.asImageBitmap
 import app.opentv.pairing.QrCodes
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -60,6 +65,38 @@ fun AboutScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var updateLine by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
+    var showPatchNotes by remember { mutableStateOf(false) }
+
+    if (showPatchNotes) {
+        AlertDialog(
+            onDismissRequest = { showPatchNotes = false },
+            title = {
+                Text(
+                    stringResource(R.string.about_patch_notes_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    PatchNotesData.notes.forEach { note ->
+                        PatchNoteCard(note)
+                    }
+                }
+            },
+            confirmButton = {
+                OutlinedButton(onClick = { showPatchNotes = false }) {
+                    Text(stringResource(R.string.common_close))
+                }
+            },
+        )
+    }
 
     Column(
         Modifier
@@ -103,10 +140,16 @@ fun AboutScreen(onBack: () -> Unit) {
                         }
                     },
                 ) { Text(if (checking) stringResource(R.string.about_checking) else stringResource(R.string.about_check_updates)) }
-                updateLine?.let {
-                    Spacer(Modifier.width(16.dp))
-                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+
+                Spacer(Modifier.width(12.dp))
+
+                OutlinedButton(onClick = { showPatchNotes = true }) {
+                    Text(stringResource(R.string.about_patch_notes_btn))
                 }
+            }
+            updateLine?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -151,5 +194,148 @@ private fun LinkLine(label: String, value: String, url: String = "https://$value
             fontWeight = FontWeight.SemiBold,
         )
         Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+private data class PatchNote(
+    val version: String,
+    val date: String,
+    val isLatest: Boolean = false,
+    val changes: List<String>,
+)
+
+private object PatchNotesData {
+    val notes = listOf(
+        PatchNote(
+            version = "1.0.6",
+            date = "Novembro 2026",
+            isLatest = true,
+            changes = listOf(
+                "Desempenho otimizado para TVs e Mi Stick (sem engasgos).",
+                "Tela cheia imersiva (sem barras do sistema atrapalhando).",
+                "Controles aprimorados: pular ±10s nas setas do controle.",
+                "Continuar Assistindo em Filmes e Séries (retoma de onde parou).",
+                "Navegação e busca mais fluidas e organizadas.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.5",
+            date = "Novembro 2026",
+            changes = listOf(
+                "Sincronização geral de canais, filmes, séries e EPG.",
+                "Interface e fontes 20% maiores para melhor leitura.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.4",
+            date = "Novembro 2026",
+            changes = listOf(
+                "Segurança reforçada: Bloqueio de exportação de dados via backup (allowBackup=false).",
+                "Gerenciador Web seguro: Proteção por código PIN de 6 dígitos e limite de tentativas.",
+                "Validação de integridade: Checagem SHA-256 e assinatura no instalador de atualizações.",
+                "Preservação de variantes de qualidade (SD/HD/FHD) em listas M3U.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.3",
+            date = "Novembro 2026",
+            changes = listOf(
+                "Painel remoto: Integração com gestão dinâmica de DNS do servidor.",
+                "Otimizações de conexão e reconexão automática em transmissões ao vivo.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.2",
+            date = "Novembro 2026",
+            changes = listOf(
+                "Melhorias de desempenho no catálogo de filmes e séries (VOD).",
+                "Ajustes de reprodução e estabilidade de áudio.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.1",
+            date = "Novembro 2026",
+            changes = listOf(
+                "Lançamento inicial do NKTV Player.",
+                "Suporte a listas Xtream Codes e M3U com Guia de Programação (EPG).",
+            ),
+        ),
+    )
+}
+
+@Composable
+private fun PatchNoteCard(note: PatchNote) {
+    var focused by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (focused) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            )
+            .border(
+                width = if (note.isLatest || focused) 1.5.dp else 1.dp,
+                color = when {
+                    focused -> MaterialTheme.colorScheme.primary
+                    note.isLatest -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                },
+                shape = RoundedCornerShape(8.dp),
+            )
+            .focusable()
+            .onFocusChanged { focused = it.isFocused }
+            .padding(12.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "v${note.version}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (note.isLatest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                if (note.isLatest) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "NOVA",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            Text(
+                note.date,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        note.changes.forEach { change ->
+            Row(
+                Modifier.padding(vertical = 2.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    "• ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    change,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
     }
 }

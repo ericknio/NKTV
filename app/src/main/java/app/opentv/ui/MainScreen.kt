@@ -96,7 +96,7 @@ fun MainScreen(
     onPlayChannel: (Channel) -> Unit,
     onOpenMovie: (Movie) -> Unit,
     onOpenSeries: (Series) -> Unit,
-    onResume: (mediaKey: String, url: String, title: String) -> Unit,
+    onResume: (mediaKey: String, url: String, title: String, seriesRoomId: Long?) -> Unit,
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -341,6 +341,7 @@ private fun NavRail(
         RailItem(Icons.Filled.Refresh, stringResource(R.string.nav_sync), expanded, false, onOpenSync)
         RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
         RailItem(Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false, onOpenSettings)
+        Spacer(Modifier.height(8.dp))
     }
 }
 

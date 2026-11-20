@@ -49,6 +49,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -713,6 +715,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         val posterUrl: String?,
         val streamUrl: String,
         val progress: Float,
+        val seriesRoomId: Long? = null,
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -720,25 +723,30 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         settings.activeProfileId
             .flatMapLatest { pid -> graph.playbackPositions.observeRecent(pid) }
             .mapLatest { positions -> positions.filter { !it.isFinished }.mapNotNull { resolveResume(it) } }
+            .flowOn(Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private suspend fun resolveResume(pos: PlaybackPosition): ResumeItem? {
+    private suspend fun resolveResume(pos: PlaybackPosition): ResumeItem? = withContext(Dispatchers.IO) {
         val parts = pos.mediaKey.split(":", limit = 2)
-        if (parts.size != 2) return null
-        val id = parts[1].toLongOrNull() ?: return null
+        if (parts.size != 2) return@withContext null
+        val id = parts[1].toLongOrNull() ?: return@withContext null
         val progress =
             if (pos.durationMillis > 0) (pos.positionMillis.toFloat() / pos.durationMillis).coerceIn(0f, 1f) else 0f
-        return when (parts[0]) {
+        when (parts[0]) {
             "movie" -> graph.catalogRepository.movie(id)?.let {
                 ResumeItem(pos.mediaKey, it.displayTitle, it.posterUrl, it.streamUrl, progress)
             }
-            "ep" -> graph.catalogRepository.episode(id)?.let {
+            "ep" -> graph.catalogRepository.episode(id)?.let { ep ->
+                val series = graph.catalogRepository.seriesByStreamId(ep.seriesId)
+                val epLabel = "S${ep.season}E${ep.episodeNumber}"
+                val title = if (series != null) "${series.displayTitle}: $epLabel" else epLabel
                 ResumeItem(
                     pos.mediaKey,
-                    it.title.ifBlank { "S${it.season} E${it.episodeNumber}" },
-                    it.stillUrl,
-                    it.streamUrl,
+                    title,
+                    ep.stillUrl,
+                    ep.streamUrl,
                     progress,
+                    seriesRoomId = series?.id,
                 )
             }
             else -> null
@@ -776,6 +784,21 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     @OptIn(ExperimentalCoroutinesApi::class)
     val movies: StateFlow<List<Movie>> = movieCategory
         .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Precomputed movie groups off the main thread so heavy regex / variant-folding
+     * never stutters the UI thread on low-end TV devices.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val movieGroups: StateFlow<List<MovieVariantGroup>> = movieCategory
+        .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+        .map { list ->
+            withContext(Dispatchers.Default) {
+                graph.catalogRepository.collapseVariants(list)
+            }
+        }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -858,9 +881,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         // [loadHomeFeeds] so a profile switch triggers exactly one library scan, and re-opening the
         // tab with the same profile and an unchanged catalogue triggers none. Reads an empty result
         // until a VOD sync has populated the catalogue; [ensureVodLoaded] re-runs it once one has.
-        viewModelScope.launch {
-            settings.activeProfileId.collect { loadHomeFeeds() }
-        }
+        settings.activeProfileId.onEach { loadHomeFeeds() }.catch { }.launchIn(viewModelScope)
     }
 
     /**
@@ -988,6 +1009,20 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
+    val movieSearchGroups: StateFlow<List<MovieVariantGroup>> =
+        movieSearchInput.map { it.trim() }.debounce(150).distinctUntilChanged()
+            .flatMapLatest { q ->
+                if (q.isEmpty()) flowOf(emptyList()) else graph.catalogRepository.searchMovies(q)
+            }
+            .map { list ->
+                withContext(Dispatchers.Default) {
+                    graph.catalogRepository.collapseVariants(list)
+                }
+            }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     // Dedicated search for SeriesScreen
     private val seriesSearchInput = MutableStateFlow("")
     fun setSeriesSearchQuery(text: String) { seriesSearchInput.value = text }
@@ -1073,6 +1108,14 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     /** The active profile's saved resume position for a movie/episode, or null — drives Resume vs Watch now. */
     suspend fun resumePosition(mediaKey: String): PlaybackPosition? =
         graph.playbackPositions.get(settings.activeProfileId.value, mediaKey)
+
+    /** Last unfinished episode for this series from the in-memory continue-watching list, or null. */
+    suspend fun seriesLastEpisode(seriesStreamId: String): ResumeItem? =
+        continueWatching.value.firstOrNull { item ->
+            if (!item.mediaKey.startsWith("ep:")) return@firstOrNull false
+            val epId = item.mediaKey.removePrefix("ep:").toLongOrNull() ?: return@firstOrNull false
+            graph.catalogRepository.episode(epId)?.seriesId == seriesStreamId
+        }
 
     /** Collapses quality variants of a movie list for a browse grid. See CatalogRepository.collapseVariants. */
     fun collapseVariants(movies: List<Movie>): List<MovieVariantGroup> =

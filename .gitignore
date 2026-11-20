@@ -17,6 +17,12 @@ keystore/
 .claude/
 .agents/
 .vscode/
+graphify-out/
+task_plan*.md
+findings*.md
+progress*.md
 
 # Kotlin compiler transient logs
 .kotlin/
+release_notes*.txt
+

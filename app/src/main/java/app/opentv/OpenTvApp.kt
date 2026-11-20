@@ -47,6 +47,7 @@ class OpenTvApp : Application(), ImageLoaderFactory {
                     .maxSizeBytes(256L * 1024 * 1024)
                     .build()
             }
+            .dispatcher(Dispatchers.IO.limitedParallelism(4))
             .crossfade(false)
             .allowRgb565(true)
             .build()
