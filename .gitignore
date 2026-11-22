@@ -28,3 +28,6 @@ progress*.md
 .kotlin/
 release_notes*.txt
 
+
+# Backup do servidor do painel (senhas e bancos): nunca versionar
+backup-painel/

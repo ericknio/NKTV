@@ -604,6 +604,18 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE id = :id")
     suspend fun byId(id: Long): Episode?
 
+    /** The episode after (season, number) in the same series: rest of the season, then the next one. */
+    @Query(
+        """
+        SELECT * FROM episodes
+        WHERE sourceId = :sourceId AND seriesId = :seriesId
+          AND (season > :season OR (season = :season AND episodeNumber > :number))
+        ORDER BY season, episodeNumber
+        LIMIT 1
+        """
+    )
+    suspend fun next(sourceId: Long, seriesId: String, season: Int, number: Int): Episode?
+
     @Query("SELECT * FROM episodes WHERE streamUrl = :url LIMIT 1")
     suspend fun byStreamUrl(url: String): Episode?
 
@@ -624,6 +636,13 @@ interface PlaybackPositionDao {
             "ORDER BY updatedAtMillis DESC LIMIT :limit",
     )
     fun observeRecent(profileId: Long, limit: Int = 30): Flow<List<PlaybackPosition>>
+
+    /** Keys watched to the end (same 95% rule as PlaybackPosition.isFinished) — the "Assistido" marks. */
+    @Query(
+        "SELECT mediaKey FROM playback_positions WHERE profileId = :profileId " +
+            "AND durationMillis > 0 AND positionMillis * 1.0 / durationMillis > 0.95",
+    )
+    fun observeFinishedKeys(profileId: Long): Flow<List<String>>
 
     @Query("SELECT * FROM playback_positions")
     suspend fun all(): List<PlaybackPosition>

@@ -736,7 +736,24 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
+/**
+ * What a Movies/Shows list must remember while a detail page is open on top of it: the rail
+ * selection, the search text, where the grid was scrolled and which poster was opened. Lives in the
+ * list's ViewModel, so Back lands exactly where the viewer left.
+ */
+class VodBrowseState {
+    var selected: String? = null
+    var query: String = ""
+    var scrollKey: Any? = null
+    var scrollIndex: Int = 0
+    var scrollOffset: Int = 0
+    var lastOpenedId: Long? = null
+}
+
 class VodViewModel(app: Application) : AndroidViewModel(app) {
+    val moviesBrowse = VodBrowseState()
+    val seriesBrowse = VodBrowseState()
+
     private val graph = ServiceLocator.get(app)
     private val settings = graph.settings
 
@@ -754,9 +771,56 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     val continueWatching: StateFlow<List<ResumeItem>> =
         settings.activeProfileId
             .flatMapLatest { pid -> graph.playbackPositions.observeRecent(pid) }
-            .mapLatest { positions -> positions.filter { !it.isFinished }.mapNotNull { resolveResume(it) } }
+            .mapLatest { positions -> buildContinueWatching(positions) }
             .flowOn(Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Media keys watched to the end, for the "Assistido" marks on episodes and films. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val watchedKeys: StateFlow<Set<String>> =
+        settings.activeProfileId
+            .flatMapLatest { pid -> graph.playbackPositions.observeFinishedKeys(pid) }
+            .map { it.toSet() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /**
+     * One card per series (its most recent episode): mid-episode resumes it; a finished episode
+     * offers the next one from the start, and the series drops off after its last episode.
+     * Films show only while unfinished.
+     */
+    private suspend fun buildContinueWatching(positions: List<PlaybackPosition>): List<ResumeItem> =
+        withContext(Dispatchers.IO) {
+            // Resolve each episode once, keeping recency order (positions arrive newest first).
+            val episodes = positions.mapNotNull { pos ->
+                pos.mediaKey.takeIf { it.startsWith("ep:") }?.removePrefix("ep:")?.toLongOrNull()
+                    ?.let { graph.catalogRepository.episode(it) }?.let { pos.mediaKey to it }
+            }.toMap()
+            val bySeries = positions.filter { it.mediaKey in episodes }
+                .groupBy { episodes.getValue(it.mediaKey).let { ep -> "${ep.sourceId}:${ep.seriesId}" } }
+            val seenSeries = HashSet<String>()
+            positions.mapNotNull { pos ->
+                if (!pos.mediaKey.startsWith("ep:")) {
+                    return@mapNotNull if (pos.isFinished) null else resolveResume(pos)
+                }
+                val ep = episodes[pos.mediaKey] ?: return@mapNotNull null
+                val key = "${ep.sourceId}:${ep.seriesId}"
+                if (!seenSeries.add(key)) return@mapNotNull null
+                if (!pos.isFinished) return@mapNotNull resolveResume(pos)
+                // Newest is done: offer the one after the furthest episode finished, so re-watching an
+                // early episode never sends the viewer backwards.
+                val furthest = bySeries.getValue(key).filter { it.isFinished }
+                    .map { episodes.getValue(it.mediaKey) }
+                    .maxBy { it.season * 10_000 + it.episodeNumber }
+                graph.catalogRepository.nextEpisode(furthest)?.let { episodeItem(it, 0f) }
+            }
+        }
+
+    private suspend fun episodeItem(ep: app.opentv.data.model.Episode, progress: Float): ResumeItem {
+        val series = graph.catalogRepository.seriesByStreamId(ep.seriesId)
+        val epLabel = "S${ep.season}E${ep.episodeNumber}"
+        val title = if (series != null) "${series.displayTitle}: $epLabel" else epLabel
+        return ResumeItem("ep:${ep.id}", title, ep.stillUrl, ep.streamUrl, progress, seriesRoomId = series?.id)
+    }
 
     private suspend fun resolveResume(pos: PlaybackPosition): ResumeItem? = withContext(Dispatchers.IO) {
         val parts = pos.mediaKey.split(":", limit = 2)
@@ -768,19 +832,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             "movie" -> graph.catalogRepository.movie(id)?.let {
                 ResumeItem(pos.mediaKey, it.displayTitle, it.posterUrl, it.streamUrl, progress)
             }
-            "ep" -> graph.catalogRepository.episode(id)?.let { ep ->
-                val series = graph.catalogRepository.seriesByStreamId(ep.seriesId)
-                val epLabel = "S${ep.season}E${ep.episodeNumber}"
-                val title = if (series != null) "${series.displayTitle}: $epLabel" else epLabel
-                ResumeItem(
-                    pos.mediaKey,
-                    title,
-                    ep.stillUrl,
-                    ep.streamUrl,
-                    progress,
-                    seriesRoomId = series?.id,
-                )
-            }
+            "ep" -> graph.catalogRepository.episode(id)?.let { episodeItem(it, progress) }
             else -> null
         }
     }

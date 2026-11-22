@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -55,7 +56,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -76,6 +84,7 @@ import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.parser.displayTitle
 import app.opentv.data.repo.MovieVariantGroup
+import app.opentv.ui.VodBrowseState
 import app.opentv.ui.VodViewModel
 import coil.compose.AsyncImage
 
@@ -107,19 +116,27 @@ fun MoviesScreen(
 
     val favouriteGroups by viewModel.favouriteMovieGroups.collectAsState()
 
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    // Kept in the ViewModel so Back from a movie's page returns to the same category and search.
+    val browse = viewModel.moviesBrowse
+    val railTarget = remember { FocusRequester() }
+    var searchQuery by remember { mutableStateOf(browse.query) }
+    var selectedCategory by remember { mutableStateOf(browse.selected) }
+    LaunchedEffect(searchQuery, selectedCategory) {
+        browse.query = searchQuery
+        browse.selected = selectedCategory
+    }
 
     // Last favourite removed while "Favoritos" is open: fall back to "Todos" instead of a stale list.
     LaunchedEffect(favouriteGroups.isEmpty()) {
         if (favouriteGroups.isEmpty() && selectedCategory == "__fav__") selectedCategory = null
     }
+    LaunchedEffect(movieCwItems.isEmpty()) {
+        if (movieCwItems.isEmpty() && selectedCategory == "__cw__") selectedCategory = null
+    }
 
     LaunchedEffect(Unit) {
         if (hasSources) viewModel.ensureVodLoaded()
         viewModel.loadHomeFeeds()
-        viewModel.selectMovieCategory(null)
-        viewModel.setMovieSearchQuery("")
     }
 
     Row(Modifier.fillMaxSize()) {
@@ -155,6 +172,7 @@ fun MoviesScreen(
                 if (movieCwItems.isNotEmpty()) {
                     item {
                         VodRailEntry(
+                            focusWhenSelected = railTarget,
                             label = stringResource(R.string.vod_continue_watching),
                             selected = selectedCategory == "__cw__" && searchQuery.isEmpty(),
                             onClick = {
@@ -168,6 +186,7 @@ fun MoviesScreen(
                 if (favouriteGroups.isNotEmpty()) {
                     item {
                         VodRailEntry(
+                            focusWhenSelected = railTarget,
                             label = stringResource(R.string.vod_favourites),
                             selected = selectedCategory == "__fav__" && searchQuery.isEmpty(),
                             onClick = {
@@ -180,6 +199,7 @@ fun MoviesScreen(
                 }
                 item {
                     VodRailEntry(
+                        focusWhenSelected = railTarget,
                         label = stringResource(R.string.vod_all),
                         selected = selectedCategory == null && searchQuery.isEmpty(),
                         onClick = {
@@ -192,6 +212,7 @@ fun MoviesScreen(
                 }
                 items(categories, key = { it.id }) { cat ->
                     VodRailEntry(
+                        focusWhenSelected = railTarget,
                         label = cat.name,
                         selected = selectedCategory == cat.id && searchQuery.isEmpty(),
                         onClick = {
@@ -214,7 +235,13 @@ fun MoviesScreen(
             when {
                 selectedCategory == "__cw__" -> ContinueWatchingRow(movieCwItems, onResume)
                 selectedCategory == "__fav__" && !isSearching -> {
-                    MovieCategoryGrid(groups = favouriteGroups, onOpenMovie = onOpenMovie, categoryKey = "__fav__")
+                    MovieCategoryGrid(
+                        groups = favouriteGroups,
+                        onOpenMovie = onOpenMovie,
+                        browse = browse,
+                        leftTarget = railTarget,
+                        categoryKey = "__fav__",
+                    )
                 }
                 displayedGroups.isEmpty() && isSearching -> {
                     EmptyVod(
@@ -235,6 +262,8 @@ fun MoviesScreen(
                     MovieCategoryGrid(
                         groups = displayedGroups,
                         onOpenMovie = onOpenMovie,
+                        browse = browse,
+                        leftTarget = if (isSearching) null else railTarget,
                         categoryKey = if (isSearching) searchQuery else selectedCategory,
                         canLoadMore = !isSearching && movieLoaded == movieLimit,
                         onLoadMore = { viewModel.loadMoreMovies() },
@@ -265,18 +294,25 @@ fun SeriesScreen(
 
     val favouriteSeries by viewModel.favouriteSeries.collectAsState()
 
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    val browse = viewModel.seriesBrowse
+    val railTarget = remember { FocusRequester() }
+    var searchQuery by remember { mutableStateOf(browse.query) }
+    var selectedCategory by remember { mutableStateOf(browse.selected) }
+    LaunchedEffect(searchQuery, selectedCategory) {
+        browse.query = searchQuery
+        browse.selected = selectedCategory
+    }
 
     LaunchedEffect(favouriteSeries.isEmpty()) {
         if (favouriteSeries.isEmpty() && selectedCategory == "__fav__") selectedCategory = null
+    }
+    LaunchedEffect(seriesCwItems.isEmpty()) {
+        if (seriesCwItems.isEmpty() && selectedCategory == "__cw__") selectedCategory = null
     }
 
     LaunchedEffect(Unit) {
         if (hasSources) viewModel.ensureVodLoaded()
         viewModel.loadHomeFeeds()
-        viewModel.selectSeriesCategory(null)
-        viewModel.setSeriesSearchQuery("")
     }
 
     Row(Modifier.fillMaxSize()) {
@@ -312,6 +348,7 @@ fun SeriesScreen(
                 if (seriesCwItems.isNotEmpty()) {
                     item {
                         VodRailEntry(
+                            focusWhenSelected = railTarget,
                             label = stringResource(R.string.vod_continue_watching),
                             selected = selectedCategory == "__cw__" && searchQuery.isEmpty(),
                             onClick = {
@@ -325,6 +362,7 @@ fun SeriesScreen(
                 if (favouriteSeries.isNotEmpty()) {
                     item {
                         VodRailEntry(
+                            focusWhenSelected = railTarget,
                             label = stringResource(R.string.vod_favourites),
                             selected = selectedCategory == "__fav__" && searchQuery.isEmpty(),
                             onClick = {
@@ -337,6 +375,7 @@ fun SeriesScreen(
                 }
                 item {
                     VodRailEntry(
+                        focusWhenSelected = railTarget,
                         label = stringResource(R.string.vod_all),
                         selected = selectedCategory == null && searchQuery.isEmpty(),
                         onClick = {
@@ -349,6 +388,7 @@ fun SeriesScreen(
                 }
                 items(categories, key = { it.id }) { cat ->
                     VodRailEntry(
+                        focusWhenSelected = railTarget,
                         label = cat.name,
                         selected = selectedCategory == cat.id && searchQuery.isEmpty(),
                         onClick = {
@@ -370,7 +410,8 @@ fun SeriesScreen(
             val displayedSeries = if (isSearching) searchResults else categorySeries
             when {
                 selectedCategory == "__cw__" -> ContinueWatchingRow(seriesCwItems, onResume)
-                selectedCategory == "__fav__" && !isSearching -> SeriesCategoryGrid(favouriteSeries, onOpenSeries)
+                selectedCategory == "__fav__" && !isSearching ->
+                    SeriesCategoryGrid(favouriteSeries, onOpenSeries, browse, railTarget, "__fav__")
                 displayedSeries.isEmpty() && isSearching -> {
                     EmptyVod(
                         "Nenhuma série encontrada",
@@ -387,7 +428,13 @@ fun SeriesScreen(
                     )
                 }
                 else -> {
-                    SeriesCategoryGrid(displayedSeries, onOpenSeries)
+                    SeriesCategoryGrid(
+                        displayedSeries,
+                        onOpenSeries,
+                        browse,
+                        if (isSearching) null else railTarget,
+                        if (isSearching) searchQuery else selectedCategory,
+                    )
                 }
             }
         }
@@ -402,18 +449,36 @@ private fun VodSearchBar(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // Read-only until the viewer confirms (OK on the remote, or a tap): a text field opens the keyboard
+    // the moment it takes focus, which hijacked the screen while d-padding left toward the tab rail.
+    var editing by remember { mutableStateOf(false) }
+    var cycling by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val fieldFocus = remember { FocusRequester() }
+    val inputMode = LocalInputModeManager.current
+    // Going from read-only to editable doesn't restart the text input session, so after unlocking the
+    // field, cycle its focus: regaining focus while editable is what brings the keyboard up.
+    LaunchedEffect(editing) {
+        if (editing) {
+            cycling = true
+            focusManager.clearFocus()
+            kotlinx.coroutines.delay(60)
+            runCatching { fieldFocus.requestFocus() }
+            cycling = false
+            kotlinx.coroutines.delay(80)
+            keyboardController?.show()
+        }
+    }
 
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
+        readOnly = !editing,
         singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            imeAction = ImeAction.Search,
-            showKeyboardOnFocus = false,
-        ),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(
-            onSearch = { keyboardController?.hide() },
+            onSearch = { keyboardController?.hide(); editing = false },
         ),
         textStyle = MaterialTheme.typography.bodyMedium.copy(
             color = MaterialTheme.colorScheme.onSurface,
@@ -433,7 +498,7 @@ private fun VodSearchBar(
                         color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
                         shape = RoundedCornerShape(8.dp),
                     )
-                    .clickable { keyboardController?.show() }
+                    .clickable { if (editing) keyboardController?.show() else editing = true }
                     .padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -470,9 +535,13 @@ private fun VodSearchBar(
             }
         },
         modifier = modifier
+            .focusRequester(fieldFocus)
             .onFocusChanged {
                 focused = it.isFocused
-                if (!it.isFocused) {
+                // A finger tapping the field means "type here"; the d-pad only passing through does not.
+                if (it.isFocused && inputMode.inputMode == InputMode.Touch) editing = true
+                if (!it.isFocused && !cycling) {
+                    editing = false
                     keyboardController?.hide()
                 }
             }
@@ -480,7 +549,7 @@ private fun VodSearchBar(
                 if (event.type == KeyEventType.KeyUp &&
                     (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter)
                 ) {
-                    keyboardController?.show()
+                    if (editing) keyboardController?.show() else editing = true
                     true
                 } else {
                     false
@@ -496,6 +565,7 @@ private fun VodRailEntry(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     locked: Boolean = false,
+    focusWhenSelected: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
@@ -513,6 +583,8 @@ private fun VodRailEntry(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
+            // Target for "Left" out of the poster grid: the current category, never the search field.
+            .then(if (selected && focusWhenSelected != null) Modifier.focusRequester(focusWhenSelected) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -545,15 +617,14 @@ private fun VodRailEntry(
 private fun MovieCategoryGrid(
     groups: List<MovieVariantGroup>,
     onOpenMovie: (Movie) -> Unit,
+    browse: VodBrowseState,
+    leftTarget: FocusRequester?,
     categoryKey: Any? = null,
     canLoadMore: Boolean = false,
     onLoadMore: () -> Unit = {},
 ) {
     if (groups.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_movies)); return }
-    val gridState = rememberLazyGridState()
-    LaunchedEffect(categoryKey) {
-        gridState.scrollToItem(0)
-    }
+    val gridState = rememberBrowseGridState(browse, categoryKey)
     LaunchedEffect(gridState, canLoadMore) {
         if (!canLoadMore) return@LaunchedEffect
         snapshotFlow {
@@ -573,7 +644,7 @@ private fun MovieCategoryGrid(
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().exitLeftTo(leftTarget),
     ) {
         gridItems(groups, key = { it.primary.id }) { group ->
             val quality = group.variants.firstOrNull()?.qualityLabel?.takeIf { it.isNotBlank() }
@@ -589,27 +660,87 @@ private fun MovieCategoryGrid(
                 subtitle = group.primary.year?.toString(),
                 rating = group.primary.rating,
                 qualityBadge = badge,
-                onClick = { onOpenMovie(group.primary) },
+                modifier = Modifier.restoreFocusIfOpened(group.primary.id, browse),
+                onClick = { browse.lastOpenedId = group.primary.id; onOpenMovie(group.primary) },
             )
         }
     }
 }
 
+/** Pressing Left out of the grid goes to [target] (the current category), not to whatever is nearest. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+private fun Modifier.exitLeftTo(target: FocusRequester?): Modifier =
+    if (target == null) this
+    else this
+        .focusProperties { exit = { if (it == FocusDirection.Left) target else FocusRequester.Default } }
+        .focusGroup()
+
+/**
+ * Grid state that survives a trip to a detail page: it starts where the viewer left it for this
+ * category, and jumps to the top only when the viewer switches category (or search) themselves.
+ */
+@Composable
+private fun rememberBrowseGridState(browse: VodBrowseState, key: Any?): LazyGridState {
+    val restore = browse.scrollKey == key
+    val gridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = if (restore) browse.scrollIndex else 0,
+        initialFirstVisibleItemScrollOffset = if (restore) browse.scrollOffset else 0,
+    )
+    var shownKey by remember { mutableStateOf(key) }
+    LaunchedEffect(key) {
+        if (key != shownKey) {
+            shownKey = key
+            gridState.scrollToItem(0)
+        }
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                browse.scrollKey = key
+                browse.scrollIndex = index
+                browse.scrollOffset = offset
+            }
+    }
+    return gridState
+}
+
+/**
+ * When the viewer is driving with the d-pad, hands focus back to the poster they opened, so Back
+ * lands on it instead of falling to the search field (which pops the keyboard open).
+ */
+@Composable
+private fun Modifier.restoreFocusIfOpened(id: Long, browse: VodBrowseState): Modifier {
+    if (browse.lastOpenedId != id) return this
+    val usingKeys = LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    val requester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        if (usingKeys) {
+            kotlinx.coroutines.delay(150)
+            runCatching { requester.requestFocus() }
+            keyboard?.hide()
+        }
+        browse.lastOpenedId = null
+    }
+    return this.focusRequester(requester)
+}
+
 /** One category's shows as a poster grid. */
 @Composable
-private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> Unit) {
+private fun SeriesCategoryGrid(
+    series: List<Series>,
+    onOpenSeries: (Series) -> Unit,
+    browse: VodBrowseState,
+    leftTarget: FocusRequester?,
+    categoryKey: Any?,
+) {
     if (series.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_shows)); return }
-    val gridState = rememberLazyGridState()
-    LaunchedEffect(series) {
-        gridState.scrollToItem(0)
-    }
+    val gridState = rememberBrowseGridState(browse, categoryKey)
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Adaptive(minSize = 140.dp),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().exitLeftTo(leftTarget),
     ) {
         gridItems(series, key = { it.id }) { item ->
             PosterCard(
@@ -617,7 +748,8 @@ private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> U
                 posterUrl = item.posterUrl,
                 subtitle = item.year?.toString(),
                 rating = item.rating,
-                onClick = { onOpenSeries(item) },
+                modifier = Modifier.restoreFocusIfOpened(item.id, browse),
+                onClick = { browse.lastOpenedId = item.id; onOpenSeries(item) },
             )
         }
     }

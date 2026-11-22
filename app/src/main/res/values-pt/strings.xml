@@ -401,6 +401,9 @@
     <string name="vod_search_hint">Pesquisar filmes e séries</string>
     <string name="vod_continue_watching">Continuar assistindo</string>
     <string name="vod_favourites">Favoritos</string>
+    <string name="vod_watched">Assistido</string>
+    <string name="player_next_episode">Próximo episódio</string>
+    <string name="player_next_in">Começa em %1$d s</string>
     <string name="vod_large_provider_note">Provedores com catálogos grandes podem levar alguns minutos no primeiro carregamento.</string>
     <string name="vod_recommended">Recomendados para você</string>
     <string name="vod_recently_added">Adicionados recentemente</string>

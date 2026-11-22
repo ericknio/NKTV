@@ -113,7 +113,10 @@ class UpdateChecker(
         const val PANEL_UPDATE_URL = "https://app.fbtec.site/api/v1/update"
 
         fun cleanNotes(raw: String): String {
-            var text = raw
+            // The release body carries the APK hash for integrity checks; it is not a patch note.
+            var text = raw.lines()
+                .filterNot { Regex("""(?i)sha[-_]?256.*[a-f0-9]{64}""").containsMatchIn(it) }
+                .joinToString("\n")
             val cutFrom = listOf(
                 "Built by GitHub Actions",
                 "**Full Changelog**",

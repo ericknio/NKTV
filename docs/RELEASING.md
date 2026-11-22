@@ -35,8 +35,10 @@ desfeito, só substituído por uma versão nova. Por isso a conferência vem ant
 
 ## 3. Publicar (Antigravity, depois do OK)
 
-1. Última linha do `release_notes_<versão>.txt`, neste formato exato:
-   `SHA-256 (NKTV.V<versão>.apk): <hash>`
+1. Última linha do `release_notes_<versão>.txt`, **dentro de um comentário HTML**, neste formato exato:
+   `<!-- SHA-256 (NKTV.V<versão>.apk): <hash> -->`
+   O comentário não aparece no GitHub nem no aviso de atualização do app (o `cleanNotes` corta a
+   partir de `<!--`). O patch note deve ter só as novidades, sem SHA nem texto técnico.
 2. Commit só dos arquivos rastreados (`git add -u`), sem o cofre `APK/` nem `.maestri/`:
    `feat: release <versão> - <resumo curto>`, depois `git push origin main`.
 3. Criar a release:

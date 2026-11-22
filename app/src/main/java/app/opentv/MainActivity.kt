@@ -605,6 +605,12 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     title = arg("title"),
                     userAgent = arg("ua").ifEmpty { "OpenTV/0.1 (Android)" },
                     onBack = { navController.popBackStack() },
+                    // Replace this player so Back from the next episode returns to the series page.
+                    onPlayNext = { key, url, title ->
+                        navController.navigate(Routes.vodPlayer(key, url, title, "OpenTV/0.1 (Android)")) {
+                            popUpTo(Routes.VOD_PLAYER) { inclusive = true }
+                        }
+                    },
                 )
             }
         }

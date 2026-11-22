@@ -202,6 +202,9 @@ class CatalogRepository(
 
     suspend fun episode(id: Long): Episode? = episodeDao.byId(id)
 
+    suspend fun nextEpisode(current: Episode): Episode? =
+        episodeDao.next(current.sourceId, current.seriesId, current.season, current.episodeNumber)
+
     suspend fun movieByStreamUrl(url: String): Movie? = movieDao.byStreamUrl(url)
 
     suspend fun episodeByStreamUrl(url: String): Episode? = episodeDao.byStreamUrl(url)

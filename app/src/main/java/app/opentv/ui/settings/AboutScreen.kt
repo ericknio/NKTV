@@ -258,9 +258,18 @@ private data class PatchNote(
 private object PatchNotesData {
     val notes = listOf(
         PatchNote(
-            version = "1.0.10",
+            version = "1.0.11",
             date = "Novembro 2026",
             isLatest = true,
+            changes = listOf(
+                "Próximo episódio automático em séries com contagem regressiva.",
+                "Marcação de episódios assistidos.",
+                "Melhorias de foco e navegação no controle remoto.",
+            ),
+        ),
+        PatchNote(
+            version = "1.0.10",
+            date = "Novembro 2026",
             changes = listOf("Nova aba Favoritos em Filmes e Séries."),
         ),
         PatchNote(

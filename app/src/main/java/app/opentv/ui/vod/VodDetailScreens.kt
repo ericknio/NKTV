@@ -5,6 +5,8 @@
  */
 package app.opentv.ui.vod
 
+import androidx.compose.material.icons.filled.Check
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -103,6 +105,7 @@ fun MovieDetailScreen(
         }
     }
 
+    val watchedKeys by viewModel.watchedKeys.collectAsState()
     val m = movie ?: run { LoadingDetail(); return }
 
     // Land focus on the primary action once the page is up, so a d-pad has somewhere to be.
@@ -113,7 +116,7 @@ fun MovieDetailScreen(
 
     LazyColumn(Modifier.fillMaxSize()) {
         item(key = "header") {
-            DetailBackdrop(title = m.displayTitle, backdropUrl = m.backdropUrl, posterUrl = m.posterUrl, meta = movieMeta(m)) {
+            DetailBackdrop(title = m.displayTitle, backdropUrl = m.backdropUrl, posterUrl = m.posterUrl, meta = movieMeta(m), watched = "movie:${m.id}" in watchedKeys) {
                 DetailButton(
                     icon = Icons.Filled.PlayArrow,
                     label = stringResource(if (resumeExists) R.string.vod_resume else R.string.vod_watch_now),
@@ -277,8 +280,14 @@ fun SeriesDetailScreen(
         if (loaded != null) {
             viewModel.loadEpisodes(loaded)
             moreLike = viewModel.moreLikeThisSeries(loaded)
-            resumeItem = viewModel.seriesLastEpisode(loaded.seriesId)
         }
+    }
+    // Re-evaluated whenever the history changes, so coming back from the player shows the next episode.
+    val continueWatching by viewModel.continueWatching.collectAsState()
+    val watched by viewModel.watchedKeys.collectAsState()
+    LaunchedEffect(series?.seriesId, continueWatching) {
+        val sid = series?.seriesId ?: return@LaunchedEffect
+        resumeItem = viewModel.seriesLastEpisode(sid)
     }
 
     val s = series
@@ -361,7 +370,7 @@ fun SeriesDetailScreen(
                     SectionHeader(stringResource(R.string.vod_season, season))
                 }
                 items(eps, key = { it.id }) { ep ->
-                    EpisodeRow(ep, epProgressMap["ep:${ep.id}"] ?: 0f, onPlayEpisode)
+                    EpisodeRow(ep, epProgressMap["ep:${ep.id}"] ?: 0f, onPlayEpisode, watched = "ep:${ep.id}" in watched)
                 }
             }
         }
@@ -395,6 +404,7 @@ private fun DetailBackdrop(
     backdropUrl: String?,
     posterUrl: String?,
     meta: String,
+    watched: Boolean = false,
     actions: @Composable RowScope.() -> Unit,
 ) {
     Box(
@@ -447,7 +457,10 @@ private fun DetailBackdrop(
                 )
                 if (meta.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(meta, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.85f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(meta, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.85f))
+                        if (watched) WatchedBadge()
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
                 Row(
@@ -673,10 +686,27 @@ private fun DetailButton(
     }
 }
 
+private val WatchedGreen = Color(0xFF43A047)
+
+/** "✓ Assistido" — shown on episodes and films watched to the end. */
+@Composable
+private fun WatchedBadge() {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+        Icon(Icons.Filled.Check, contentDescription = null, tint = WatchedGreen, modifier = Modifier.width(16.dp).height(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(stringResource(R.string.vod_watched), style = MaterialTheme.typography.labelMedium, color = WatchedGreen)
+    }
+}
+
 /** One episode row: season/episode marker, title, and a focus highlight; plays on click.
  *  Pass progress > 0 to show a resume bar (the fraction already watched). */
 @Composable
-private fun EpisodeRow(ep: Episode, progress: Float = 0f, onPlay: (mediaKey: String, url: String, title: String) -> Unit) {
+private fun EpisodeRow(
+    ep: Episode,
+    progress: Float = 0f,
+    onPlay: (mediaKey: String, url: String, title: String) -> Unit,
+    watched: Boolean = false,
+) {
     var focused by remember { mutableStateOf(false) }
     Column(
         Modifier
@@ -709,7 +739,9 @@ private fun EpisodeRow(ep: Episode, progress: Float = 0f, onPlay: (mediaKey: Str
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (watched) WatchedBadge()
         }
         if (progress > 0f) {
             Spacer(Modifier.height(6.dp))

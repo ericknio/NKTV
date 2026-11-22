@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -117,6 +119,7 @@ fun VodPlayerScreen(
     title: String,
     userAgent: String,
     onBack: () -> Unit,
+    onPlayNext: ((key: String, url: String, title: String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -189,6 +192,46 @@ fun VodPlayerScreen(
 
     suspend fun savePosition() {
         currentPosition()?.let { graph.playbackPositions.upsert(it) }
+    }
+
+    // Next episode (series only): the bar button, the 40 s countdown and the auto-advance at the end.
+    var nextEp by remember(mediaKey) { mutableStateOf<app.opentv.data.model.Episode?>(null) }
+    var nextPromptDismissed by remember(mediaKey) { mutableStateOf(false) }
+    var advancing by remember(mediaKey) { mutableStateOf(false) }
+    val promptFocus = remember { FocusRequester() }
+    LaunchedEffect(mediaKey) {
+        val id = mediaKey.takeIf { it.startsWith("ep:") }?.removePrefix("ep:")?.toLongOrNull() ?: return@LaunchedEffect
+        nextEp = graph.catalogRepository.episode(id)?.let { graph.catalogRepository.nextEpisode(it) }
+    }
+    val remainingMs = durationMs - positionMs
+    val showNextPrompt = nextEp != null && !growingRec && !nextPromptDismissed && !advancing &&
+        !scrubbing && durationMs > 60_000 && remainingMs in 0..40_000
+
+    fun playNext() {
+        val next = nextEp ?: return
+        if (advancing) return
+        advancing = true
+        val last = currentPosition()
+        // Stop first so the provider connection is free before the next episode opens.
+        controller.player.stop()
+        if (last != null) {
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { graph.playbackPositions.upsert(last) }
+        }
+        onPlayNext?.invoke("ep:${next.id}", next.streamUrl, "S${next.season}E${next.episodeNumber} · ${next.title}")
+    }
+
+    // At the end: an episode with a next one (countdown untouched) moves on by itself; a film, the
+    // last episode, or a dismissed countdown closes the player, so the detail page shows "Assistido"
+    // instead of a frozen last frame. A recording still being written never "ends" here.
+    LaunchedEffect(nextEp, nextPromptDismissed) {
+        if (growingRec) return@LaunchedEffect
+        while (isActive) {
+            if (controller.player.playbackState == androidx.media3.common.Player.STATE_ENDED) {
+                if (nextEp != null && !nextPromptDismissed && onPlayNext != null) playNext() else onBack()
+                break
+            }
+            delay(500)
+        }
     }
 
     // Keep the screen awake during playback — see the note in PlayerScreen; a film is exactly when
@@ -271,8 +314,11 @@ fun VodPlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, vodPanel) {
-        if (controlsVisible) {
+    LaunchedEffect(controlsVisible, vodPanel, showNextPrompt) {
+        if (showNextPrompt && vodPanel == VodPanel.NONE) {
+            delay(40)
+            runCatching { promptFocus.requestFocus() }
+        } else if (controlsVisible) {
             delay(40)
             runCatching { if (vodPanel != VodPanel.NONE) panelFocus.requestFocus() else barFocus.requestFocus() }
         } else {
@@ -285,6 +331,7 @@ fun VodPlayerScreen(
             (growingRec && state is PlayerController.State.Buffering)
         when {
             vodPanel != VodPanel.NONE -> vodPanel = VodPanel.NONE
+            showNextPrompt -> nextPromptDismissed = true
             controlsVisible && activelyPlaying && !paused -> controlsVisible = false
             else -> onBack()
         }
@@ -297,6 +344,8 @@ fun VodPlayerScreen(
             .onPreviewKeyEvent { event ->
                 when {
                     event.key == Key.Back || event.key == Key.Escape -> false
+                    // While the next-episode prompt is up, OK must reach its button, not just reveal the bar.
+                    showNextPrompt -> false
                     event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionRight -> { controller.seekForward(); true }
                     event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionLeft -> { controller.seekBackward(); true }
                     event.type == KeyEventType.KeyDown && !controlsVisible -> { reveal(); true }
@@ -395,6 +444,38 @@ fun VodPlayerScreen(
             else -> Unit
         }
 
+        // 40 s before the end: "next episode in N s" with an OK that skips straight to it.
+        if (showNextPrompt && onPlayNext != null) {
+            val secs = ((remainingMs + 999) / 1000).toInt()
+            Row(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                    )
+                    .padding(end = 28.dp, bottom = if (controlsVisible) 200.dp else 32.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        stringResource(R.string.player_next_episode),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White.copy(alpha = 0.7f),
+                    )
+                    Text(
+                        stringResource(R.string.player_next_in, secs),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                VodChip(Icons.Filled.SkipNext, "OK", focusRequester = promptFocus) { playNext() }
+            }
+        }
+
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -466,7 +547,11 @@ fun VodPlayerScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Scrolls sideways when the buttons outnumber the width (phone held upright).
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     VodChip(Icons.Filled.FastRewind, stringResource(R.string.player_rewind)) {
                         if (growingRec) seekRelative(-15_000) else controller.seekBackward(); interaction++
                     }
@@ -483,6 +568,10 @@ fun VodPlayerScreen(
                     Spacer(Modifier.width(10.dp))
                     VodChip(Icons.Filled.FastForward, stringResource(R.string.player_forward)) {
                         if (growingRec) seekRelative(15_000) else controller.seekForward(); interaction++
+                    }
+                    if (nextEp != null && onPlayNext != null) {
+                        Spacer(Modifier.width(10.dp))
+                        VodChip(Icons.Filled.SkipNext, stringResource(R.string.player_next_episode)) { playNext() }
                     }
                     Spacer(Modifier.width(20.dp))
                     VodChip(Icons.Filled.ClosedCaption, stringResource(R.string.player_subtitles)) {
@@ -542,7 +631,7 @@ private fun VodChip(
     ) {
         Icon(icon, contentDescription = label, tint = content)
         Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, softWrap = false)
     }
 }
 
