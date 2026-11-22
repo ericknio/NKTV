@@ -425,9 +425,10 @@ interface MovieDao {
         SELECT * FROM movies
         WHERE (:categoryId IS NULL OR categoryId = :categoryId)
         ORDER BY addedMillis DESC, name
+        LIMIT :limit
         """
     )
-    fun observe(categoryId: String?): Flow<List<Movie>>
+    fun observe(categoryId: String?, limit: Int): Flow<List<Movie>>
 
     @Query("SELECT * FROM movies WHERE favourite = 1 ORDER BY name")
     fun observeFavourites(): Flow<List<Movie>>
@@ -440,11 +441,12 @@ interface MovieDao {
     fun observeRecentlyAdded(limit: Int): Flow<List<Movie>>
 
     /**
-     * Every movie, newest first — the working set for the Kotlin-side feeds (by-genre grouping,
-     * genre-affinity recommendations, more-like-this). One pass over a few thousand rows is cheap;
-     * per-genre `LIKE` queries would multiply round-trips and risk substring false positives.
+     * Recent movies, newest first (capped at 5,000) — the working set for the Kotlin-side feeds
+     * (by-genre grouping, genre-affinity recommendations, more-like-this). One pass over a few
+     * thousand rows is cheap; per-genre `LIKE` queries would multiply round-trips and risk substring
+     * false positives. Capped so massive catalogs (e.g. 40k+ rows) don't exhaust memory on low-end TVs.
      */
-    @Query("SELECT * FROM movies ORDER BY addedMillis DESC")
+    @Query("SELECT * FROM movies ORDER BY addedMillis DESC LIMIT 5000")
     suspend fun all(): List<Movie>
 
     /** How many movies are on disk. A cheap COUNT the home feeds use to tell "the library grew"

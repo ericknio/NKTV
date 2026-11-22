@@ -103,6 +103,10 @@ class MainActivity : ComponentActivity() {
         hideSystemBars()
         handlePlayIntent(intent)
         val isTelevision = isRunningOnTelevision(this)
+        // Phones/tablets report very different DPIs; pinning the short side to a fixed dp size makes
+        // the UI show the same amount of content on every device. TVs keep the tuned system-based scale.
+        val dm = resources.displayMetrics
+        val phoneDensity = minOf(dm.widthPixels, dm.heightPixels) / PHONE_SHORT_SIDE_DP
 
         setContent {
             val settings = remember { ServiceLocator.get(this).settings }
@@ -121,7 +125,7 @@ class MainActivity : ComponentActivity() {
                     val currentDensity = androidx.compose.ui.platform.LocalDensity.current
                     val customDensity = remember(currentDensity) {
                         androidx.compose.ui.unit.Density(
-                            density = currentDensity.density * 0.84f,
+                            density = if (isTelevision) currentDensity.density * 0.84f else phoneDensity,
                             fontScale = currentDensity.fontScale * 0.88f,
                         )
                     }
@@ -220,6 +224,9 @@ class MainActivity : ComponentActivity() {
 
         /** A recording auto-switch notification carries the recording to watch in this extra. */
         const val EXTRA_WATCH_RECORDING = "opentv.watch_recording"
+
+        /** Short screen side, in dp, on phones/tablets. Lower = bigger UI, higher = more content. */
+        private const val PHONE_SHORT_SIDE_DP = 480f
     }
 }
 

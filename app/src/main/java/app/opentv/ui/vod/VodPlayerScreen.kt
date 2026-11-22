@@ -172,21 +172,23 @@ fun VodPlayerScreen(
         if (seekFlash != 0) { delay(700); seekFlash = 0 }
     }
 
-    suspend fun savePosition() {
+    // Read from the player synchronously: once release() runs, the position is gone.
+    fun currentPosition(): app.opentv.data.model.PlaybackPosition? {
         val player = controller.player
         val pos = player.currentPosition
-        val dur = player.duration.takeIf { it > 0 } ?: return
-        if (pos > 5_000) {
-            graph.playbackPositions.upsert(
-                app.opentv.data.model.PlaybackPosition(
-                    profileId = settings.activeProfileId.value,
-                    mediaKey = mediaKey,
-                    positionMillis = pos,
-                    durationMillis = dur,
-                    updatedAtMillis = System.currentTimeMillis(),
-                ),
-            )
-        }
+        val dur = player.duration.takeIf { it > 0 } ?: return null
+        if (pos <= 5_000) return null
+        return app.opentv.data.model.PlaybackPosition(
+            profileId = settings.activeProfileId.value,
+            mediaKey = mediaKey,
+            positionMillis = pos,
+            durationMillis = dur,
+            updatedAtMillis = System.currentTimeMillis(),
+        )
+    }
+
+    suspend fun savePosition() {
+        currentPosition()?.let { graph.playbackPositions.upsert(it) }
     }
 
     // Keep the screen awake during playback — see the note in PlayerScreen; a film is exactly when
@@ -205,8 +207,12 @@ fun VodPlayerScreen(
                     act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 }
             }
-            scope.launch { savePosition() }
+            // The composition scope is cancelled with the screen, so save from a one-shot scope.
+            val last = currentPosition()
             controller.release()
+            if (last != null) {
+                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { graph.playbackPositions.upsert(last) }
+            }
         }
     }
 

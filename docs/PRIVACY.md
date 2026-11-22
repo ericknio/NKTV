@@ -1,7 +1,20 @@
 # Privacy
 
-OpenTV collects nothing. There is no analytics SDK, no crash reporter, no telemetry, and no
-network call to any domain the project controls — because the project controls none.
+There is no analytics SDK and no crash reporter. The app does make one small call to the
+project's own panel (`app.fbtec.site`), described below.
+
+## Panel check-in
+
+Each time the app opens or returns to the foreground, it sends a short message to
+`https://app.fbtec.site/api/v1/ping` containing:
+
+- the device identifier (Android ID)
+- device model and manufacturer
+- the app version and the Android version
+
+It is used only to know which versions and devices are in use. It never includes your provider
+username, password, channels, favourites or viewing history. The panel may reply with an updated
+server address, which the app then uses for sources that point to the default server.
 
 ## What is stored, and where
 
@@ -16,7 +29,7 @@ None of it is uploaded anywhere. There is no account to create and no server to 
 
 ## Who your device talks to
 
-Only your provider, and only at the address you entered. Channel logos and posters are fetched
+Your provider (at the address you entered) and the panel check-in above. Channel logos and posters are fetched
 from whatever URLs your provider puts in its catalogue, which are usually its own servers but
 may be third parties — that is your provider's choice, not ours.
 

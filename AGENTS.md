@@ -30,3 +30,12 @@ Take the first option that fully works:
 Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
 
 (Yes, this file also applies to agents working on the ponytail repo itself. Especially to them.)
+
+## Cofre Obsidian (`APK/`)
+Só conteúdo do projeto Android. Nada do projeto de PC.
+- `Versões/` → uma nota por release: o que mudou.
+- `Decisões/` → só escolhas que o código não mostra, com o porquê.
+- `Bugs/Abertos.md` → bugs abertos e resolvidos (sintoma, causa, versão).
+- **Atualize ao concluir:** nova versão, bug achado ou resolvido, decisão relevante.
+- Notas curtas, com links `[[...]]`. Sem histórico de conversa nem o que o código já mostra.
+- Leia só a nota que a tarefa pede, não o cofre inteiro.

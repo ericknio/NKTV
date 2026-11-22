@@ -421,6 +421,7 @@ fun HomeScreen(
                         onExitLeftFromChannel = onExitLeftChannel,
                         listState = channelListState,
                         modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
+                        nowMillis = nowMillis,
                     )
                 } else {
                     GuideGrid(
@@ -435,6 +436,7 @@ fun HomeScreen(
                         onExitLeftFromChannel = onExitLeftChannel,
                         listState = channelListState,
                         modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
+                        nowMillis = nowMillis,
                     )
                 }
             }
@@ -490,8 +492,8 @@ private fun ChannelRow(
     isSelected: Boolean,
     onClick: () -> Unit,
     onToggleFavourite: () -> Unit,
+    nowMillis: Long = System.currentTimeMillis(),
 ) {
-    val now = remember { System.currentTimeMillis() }
     val background =
         if (isSelected) MaterialTheme.colorScheme.surfaceVariant
         else MaterialTheme.colorScheme.background
@@ -537,7 +539,7 @@ private fun ChannelRow(
             row.now?.let { programme ->
                 Spacer(Modifier.height(6.dp))
                 LinearProgressIndicator(
-                    progress = { programme.progressAt(now) },
+                    progress = { programme.progressAt(nowMillis) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(3.dp),

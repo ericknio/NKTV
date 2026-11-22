@@ -93,11 +93,9 @@ fun GuideGrid(
     dayOffset: Int = 0,
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
+    nowMillis: Long = System.currentTimeMillis(),
 ) {
     val scroll = rememberScrollState()
-    // Frozen to the composition instant so the Long never changes value mid-session and the
-    // @Immutable Row lambdas can skip recomposition when only the parent recomposes.
-    val now = remember { System.currentTimeMillis() }
     // Jumping to another day resets the horizontal scroll to that day's start; a within-day time
     // drift (dayOffset unchanged) leaves the user's scroll position untouched.
     androidx.compose.runtime.LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
@@ -116,7 +114,7 @@ fun GuideGrid(
                 GuideRow(
                     row = row,
                     windowStartMillis = windowStartMillis,
-                    nowMillis = now,
+                    nowMillis = nowMillis,
                     scroll = scroll,
                     isSelected = row.key == selectedKey,
                     onSelect = { onSelectRow(row) },
@@ -147,8 +145,8 @@ fun ChannelList(
     onExitLeftFromChannel: () -> Boolean = { false },
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
+    nowMillis: Long = System.currentTimeMillis(),
 ) {
-    val now = remember { System.currentTimeMillis() }
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
@@ -158,7 +156,7 @@ fun ChannelList(
         items(rows, key = { it.key }) { row ->
             ChannelListRow(
                 row = row,
-                nowMillis = now,
+                nowMillis = nowMillis,
                 isSelected = row.key == selectedKey,
                 onSelect = { onSelectRow(row) },
                 onFocus = { onFocusRow(row) },

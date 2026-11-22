@@ -18,6 +18,8 @@ keystore/
 .agents/
 .vscode/
 graphify-out/
+APK/.obsidian/
+.maestri/
 task_plan*.md
 findings*.md
 progress*.md

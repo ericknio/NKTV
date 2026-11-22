@@ -62,22 +62,23 @@ object AppConfig {
                 .post(body)
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                val respBody = response.body?.string().orEmpty()
-                val respJson = JSONObject(respBody)
-                val remoteUrl = respJson.optString("server_url", "").trim()
-                if (remoteUrl.isNotBlank()) {
-                    val prefs = context.getSharedPreferences("nktv_prefs", Context.MODE_PRIVATE)
-                    val oldUrl = prefs.getString(PREF_KEY_SERVER_URL, DEFAULT_SERVER_URL)
-                    prefs.edit().putString(PREF_KEY_SERVER_URL, remoteUrl).apply()
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string().orEmpty()
+                    val respJson = JSONObject(respBody)
+                    val remoteUrl = respJson.optString("server_url", "").trim()
+                    if (remoteUrl.isNotBlank()) {
+                        val prefs = context.getSharedPreferences("nktv_prefs", Context.MODE_PRIVATE)
+                        val oldUrl = prefs.getString(PREF_KEY_SERVER_URL, DEFAULT_SERVER_URL)
+                        prefs.edit().putString(PREF_KEY_SERVER_URL, remoteUrl).apply()
 
-                    // Propaga o novo DNS automaticamente para as fontes salvas do usuário
-                    if (sourceRepo != null && remoteUrl != oldUrl) {
-                        val sources = sourceRepo.enabled()
-                        for (src in sources) {
-                            if (src.kind == SourceKind.XTREAM && (src.url == oldUrl || src.url == DEFAULT_SERVER_URL)) {
-                                sourceRepo.save(src.copy(url = remoteUrl))
+                        // Propaga o novo DNS automaticamente para as fontes salvas do usuário
+                        if (sourceRepo != null && remoteUrl != oldUrl) {
+                            val sources = sourceRepo.enabled()
+                            for (src in sources) {
+                                if (src.kind == SourceKind.XTREAM && (src.url == oldUrl || src.url == DEFAULT_SERVER_URL)) {
+                                    sourceRepo.save(src.copy(url = remoteUrl))
+                                }
                             }
                         }
                     }

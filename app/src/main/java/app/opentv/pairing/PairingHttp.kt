@@ -26,6 +26,25 @@ object PairingHttp {
             get() = headers["content-length"]?.toIntOrNull() ?: 0
     }
 
+    /**
+     * Reads a request body of [contentLength] bytes. A single `Reader.read` can return fewer
+     * chars than asked when the body arrives in several TCP segments, so this loops until the
+     * UTF-8 byte count is reached (or the stream ends).
+     */
+    fun readBody(reader: java.io.Reader, contentLength: Int): String {
+        if (contentLength <= 0) return ""
+        val sb = StringBuilder()
+        val buffer = CharArray(4096)
+        var bytes = 0
+        while (bytes < contentLength) {
+            val n = reader.read(buffer, 0, buffer.size)
+            if (n < 0) break
+            sb.append(buffer, 0, n)
+            bytes += String(buffer, 0, n).toByteArray(Charsets.UTF_8).size
+        }
+        return sb.toString()
+    }
+
     /** Parses a request line such as `GET /pair?t=abc HTTP/1.1`. Null if it is not one. */
     fun parseRequestLine(line: String): Triple<String, String, Map<String, String>>? {
         val parts = line.trim().split(' ')

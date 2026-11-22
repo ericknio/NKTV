@@ -281,14 +281,8 @@ abstract class OpenTvDatabase : RoomDatabase() {
                     MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                 )
-                /*
-                 * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
-                 * in it is re-derivable from the provider (one sync away) except favourites
-                 * and overrides, which is a real but small loss for testers. The policy
-                 * flips to real migrations at the first tagged release — from then on,
-                 * every schema change ships a Migration and this line is deleted.
-                 */
-                .fallbackToDestructiveMigration()
+                // No destructive fallback: every schema change must ship a Migration, otherwise
+                // Room fails loudly instead of silently wiping favourites and positions.
                 .build()
     }
 }

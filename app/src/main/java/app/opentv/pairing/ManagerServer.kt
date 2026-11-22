@@ -298,10 +298,7 @@ class ManagerServer(
     private fun readBody(reader: BufferedReader, headers: Map<String, String>): String {
         val contentLength = (headers["content-length"]?.toIntOrNull() ?: 0)
             .coerceAtMost(MAX_BODY_BYTES)
-        if (contentLength <= 0) return ""
-        val buffer = CharArray(contentLength)
-        val read = reader.read(buffer, 0, contentLength)
-        return if (read > 0) String(buffer, 0, read) else ""
+        return PairingHttp.readBody(reader, contentLength)
     }
 
     // ---- Routes --------------------------------------------------------------------------------
@@ -440,15 +437,18 @@ class ManagerServer(
             writeJson(output, AddResultDto.serializer(), AddResultDto(ok = false, error = "Fill in the required fields for this provider type."))
             return
         }
-        val result = runBlocking(Dispatchers.IO) { withTimeout(5_000L) {
-            val id = sourceRepository.save(draft)
-            val saved = sourceRepository.byId(id)
-                ?: return@withTimeout AddResultDto(ok = false, error = "Could not save the source.")
-            when (val r = catalog.syncLive(saved, System.currentTimeMillis())) {
-                is CatalogRepository.SyncResult.Success -> AddResultDto(ok = true, channels = r.channelCount)
-                is CatalogRepository.SyncResult.Failed -> AddResultDto(ok = false, error = r.reason)
-            }
-        } }
+        // Full sync of a large panel can take a minute or more; match the HTTP client's 5 min.
+        val result = runCatching {
+            runBlocking(Dispatchers.IO) { withTimeout(300_000L) {
+                val id = sourceRepository.save(draft)
+                val saved = sourceRepository.byId(id)
+                    ?: return@withTimeout AddResultDto(ok = false, error = "Could not save the source.")
+                when (val r = catalog.syncLive(saved, System.currentTimeMillis())) {
+                    is CatalogRepository.SyncResult.Success -> AddResultDto(ok = true, channels = r.channelCount)
+                    is CatalogRepository.SyncResult.Failed -> AddResultDto(ok = false, error = r.reason)
+                }
+            } }
+        }.getOrElse { AddResultDto(ok = false, error = "Sync took too long or failed. Try again from the app.") }
         writeJson(output, AddResultDto.serializer(), result)
     }
 
@@ -459,7 +459,9 @@ class ManagerServer(
             writeJson(output, TestResultDto.serializer(), TestResultDto(ok = false, error = "Fill in the required fields for this provider type."))
             return
         }
-        val result = runBlocking(Dispatchers.IO) { withTimeout(5_000L) { sourceRepository.test(draft) } }
+        val result = runCatching {
+            runBlocking(Dispatchers.IO) { withTimeout(30_000L) { sourceRepository.test(draft) } }
+        }.getOrElse { Result.failure(it) }
         val dto = if (result.isSuccess) {
             TestResultDto(ok = true, message = result.getOrNull())
         } else {

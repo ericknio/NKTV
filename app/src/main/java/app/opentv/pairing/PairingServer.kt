@@ -177,13 +177,7 @@ class PairingServer(private val scope: CoroutineScope) {
 
         val contentLength = (headers["content-length"]?.toIntOrNull() ?: 0)
             .coerceAtMost(MAX_BODY_BYTES)
-        val body = if (contentLength > 0) {
-            val buffer = CharArray(contentLength)
-            val read = reader.read(buffer, 0, contentLength)
-            if (read > 0) String(buffer, 0, read) else ""
-        } else {
-            ""
-        }
+        val body = PairingHttp.readBody(reader, contentLength)
 
         val output = client.getOutputStream()
 

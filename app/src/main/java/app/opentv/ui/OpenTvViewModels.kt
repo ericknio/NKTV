@@ -852,9 +852,18 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    companion object {
+        const val MOVIE_PAGE = 300
+    }
+
+    val movieLimit = MutableStateFlow(MOVIE_PAGE)
+
+    /** Rows the DAO returned, before locked categories are hidden: equals [movieLimit] while more remain. */
+    val movieLoaded = MutableStateFlow(0)
+
     @OptIn(ExperimentalCoroutinesApi::class)
-    val movies: StateFlow<List<Movie>> = movieCategory
-        .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+    val movies: StateFlow<List<Movie>> = combine(movieCategory, movieLimit) { cat, limit -> cat to limit }
+        .flatMapLatest { (cat, limit) -> graph.catalogRepository.observeMovies(cat, limit) }
         .hidingLocked(lockedMovieCats) { it.categoryId }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -863,8 +872,9 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
      * never stutters the UI thread on low-end TV devices.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val movieGroups: StateFlow<List<MovieVariantGroup>> = movieCategory
-        .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+    val movieGroups: StateFlow<List<MovieVariantGroup>> = combine(movieCategory, movieLimit) { cat, limit -> cat to limit }
+        .flatMapLatest { (cat, limit) -> graph.catalogRepository.observeMovies(cat, limit) }
+        .onEach { movieLoaded.value = it.size }
         .hidingLocked(lockedMovieCats) { it.categoryId }
         .map { list ->
             withContext(Dispatchers.Default) {
@@ -880,7 +890,14 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         .hidingLocked(lockedSeriesCats) { it.categoryId }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun selectMovieCategory(id: String?) { movieCategory.value = id }
+    fun selectMovieCategory(id: String?) {
+        movieLimit.value = MOVIE_PAGE
+        movieCategory.value = id
+    }
+
+    fun loadMoreMovies() {
+        movieLimit.value += MOVIE_PAGE
+    }
 
     fun selectSeriesCategory(id: String?) { seriesCategory.value = id }
 

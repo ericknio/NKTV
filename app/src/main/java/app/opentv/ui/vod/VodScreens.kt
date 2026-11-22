@@ -51,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,6 +98,8 @@ fun MoviesScreen(
     val categories by viewModel.movieCategories.collectAsState()
     val lockedMovies by viewModel.lockedMovieCats.collectAsState()
     val movieGroups by viewModel.movieGroups.collectAsState()
+    val movieLimit by viewModel.movieLimit.collectAsState()
+    val movieLoaded by viewModel.movieLoaded.collectAsState()
     val searchGroups by viewModel.movieSearchGroups.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
     val continueWatchingItems by viewModel.continueWatching.collectAsState()
@@ -206,7 +209,13 @@ fun MoviesScreen(
                     )
                 }
                 else -> {
-                    MovieCategoryGrid(displayedGroups, onOpenMovie)
+                    MovieCategoryGrid(
+                        groups = displayedGroups,
+                        onOpenMovie = onOpenMovie,
+                        categoryKey = if (isSearching) searchQuery else selectedCategory,
+                        canLoadMore = !isSearching && movieLoaded == movieLimit,
+                        onLoadMore = { viewModel.loadMoreMovies() },
+                    )
                 }
             }
         }
@@ -490,11 +499,30 @@ private fun VodRailEntry(
 
 /** One category's films as a poster grid. Quality variants collapse to one card, badged. */
 @Composable
-private fun MovieCategoryGrid(groups: List<MovieVariantGroup>, onOpenMovie: (Movie) -> Unit) {
+private fun MovieCategoryGrid(
+    groups: List<MovieVariantGroup>,
+    onOpenMovie: (Movie) -> Unit,
+    categoryKey: Any? = null,
+    canLoadMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
+) {
     if (groups.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_movies)); return }
     val gridState = rememberLazyGridState()
-    LaunchedEffect(groups) {
+    LaunchedEffect(categoryKey) {
         gridState.scrollToItem(0)
+    }
+    LaunchedEffect(gridState, canLoadMore) {
+        if (!canLoadMore) return@LaunchedEffect
+        snapshotFlow {
+            val layoutInfo = gridState.layoutInfo
+            val total = layoutInfo.totalItemsCount
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible to total
+        }.collect { (lastVisible, total) ->
+            if (total > 0 && total - lastVisible <= 30) {
+                onLoadMore()
+            }
+        }
     }
     LazyVerticalGrid(
         state = gridState,

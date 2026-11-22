@@ -15,6 +15,35 @@ import org.junit.Test
  */
 class PairingHttpTest {
 
+    /** A reader that returns at most [chunk] chars per call, like a body split across TCP segments. */
+    private class ChunkedReader(private val text: String, private val chunk: Int) : java.io.Reader() {
+        private var pos = 0
+        override fun read(cbuf: CharArray, off: Int, len: Int): Int {
+            if (pos >= text.length) return -1
+            val n = minOf(len, chunk, text.length - pos)
+            text.toCharArray(pos, pos + n).copyInto(cbuf, off)
+            pos += n
+            return n
+        }
+        override fun close() {}
+    }
+
+    @Test
+    fun `readBody reassembles a 100 KB body delivered in small pieces`() {
+        val body = "x".repeat(100_000)
+        val result = PairingHttp.readBody(ChunkedReader(body, 1000), body.length)
+        assertThat(result).isEqualTo(body)
+    }
+
+    @Test
+    fun `readBody counts bytes so accented bodies do not wait for more`() {
+        val body = "{\"name\":\"Ação é notícia\"}"
+        val bytes = body.toByteArray(Charsets.UTF_8).size
+        val result = PairingHttp.readBody(ChunkedReader(body, 3), bytes)
+        assertThat(result).isEqualTo(body)
+    }
+
+
     @Test
     fun `parses a request line with a query string`() {
         val parsed = PairingHttp.parseRequestLine("GET /?t=abc123 HTTP/1.1")

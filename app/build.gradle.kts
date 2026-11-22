@@ -14,8 +14,8 @@ android {
         applicationId = "com.nktv.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -23,11 +23,13 @@ android {
         val keystorePath = System.getenv("KEYSTORE_PATH")
             ?: System.getenv("KEYSTORE_FILE")
             ?: "${System.getProperty("user.home")}/.android/nktv-release.jks"
-        val keystorePassword = System.getenv("KEYSTORE_PASSWORD") ?: "nktvpassword123"
         val keyAlias = System.getenv("KEY_ALIAS") ?: "nktv"
-        val keyPassword = System.getenv("KEY_PASSWORD") ?: "nktvpassword123"
 
-        if (file(keystorePath).exists()) {
+        val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
+        val keyPassword = System.getenv("KEY_PASSWORD")
+        val canSign = file(keystorePath).exists() && keystorePassword != null && keyPassword != null
+
+        if (canSign) {
             create("release") {
                 storeFile = file(keystorePath)
                 storePassword = keystorePassword
@@ -37,6 +39,15 @@ android {
                 enableV2Signing = true
                 enableV3Signing = true
                 enableV4Signing = true
+            }
+        }
+
+        // Debug e compileDebugKotlin não precisam de senha; só o assembleRelease exige assinar.
+        gradle.taskGraph.whenReady {
+            if (!canSign && allTasks.any { it.name == "assembleRelease" }) {
+                throw GradleException(
+                    "Para gerar o release defina KEYSTORE_PASSWORD e KEY_PASSWORD e tenha o keystore em $keystorePath",
+                )
             }
         }
     }

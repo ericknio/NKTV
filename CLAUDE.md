@@ -15,6 +15,17 @@
 
 ---
 
+## Cofre Obsidian (`APK/`)
+Só conteúdo do projeto Android. Nada do projeto de PC.
+- `Versões/` → uma nota por release: o que mudou.
+- `Decisões/` → só escolhas que o código não mostra, com o porquê.
+- `Bugs/Abertos.md` → bugs abertos e resolvidos (sintoma, causa, versão).
+- **Atualize ao concluir:** nova versão, bug achado ou resolvido, decisão relevante.
+- Notas curtas, com links `[[...]]`. Sem histórico de conversa nem o que o código já mostra.
+- Leia só a nota que a tarefa pede, não o cofre inteiro.
+
+---
+
 ## Arquitetura Resumida
 - **Kotlin + Jetpack Compose** (Material3), `minSdk 23`, `targetSdk 35`
 - Player: **ExoPlayer / Media3** via `PlayerController.kt`
@@ -30,21 +41,12 @@
 
 ---
 
-## Status Atual — v1.0.5 (produção) / v1.0.6 (em desenvolvimento local)
+## Status Atual — v1.0.9 (produção)
 
-### Em produção (v1.0.5)
+### Em produção (v1.0.9)
 - Publicado no GitHub (`ericknio/NKTV`) e disponível em `app.fbtec.site`.
-
-### Implementado localmente para v1.0.6 (aguardando validação do usuário)
-1. Modo imersivo (tela cheia no celular) — `MainActivity.kt`
-2. Patch Notes em Configurações > Sobre — `AboutScreen.kt`
-3. Reset de scroll ao trocar categoria — `HomeScreen.kt`, `GuideGrid.kt`, `VodScreens.kt`
-4. Busca sem teclado automático (Android TV) — `VodScreens.kt`
-5. Otimizações de memória/CPU (largeHeap, Coil limitado, collapseVariants em background)
-6. Sincronização "Continuar Assistindo" ↔ Filmes/Séries — `VodScreens.kt`, `VodDetailScreens.kt`
-7. ±10s com seta do controle no player — `VodPlayerScreen.kt`, `PlayerController.kt`
-8. Botão play/continuar na tela de série — `VodDetailScreens.kt`
-9. Auditoria de performance: `remember { System.currentTimeMillis() }` em `GuideGrid`, `ChannelList`, `ChannelRow`; cache de labels em `TimeHeader`
+- Inclui: paginação do catálogo de filmes (páginas de 300, Home com 5.000), limite de 3 reconexões automáticas no player, barras do guia ao vivo avançando, posição do filme salva ao sair, densidade da interface fixa por celular (TV inalterada).
+- Release: `assembleRelease` exige `KEYSTORE_PASSWORD` e `KEY_PASSWORD` no ambiente. Publicar com `gh release create <versão> NKTV.V<versão>.apk` (tag sem `v`, um único APK versionado).
 
 ---
 
