@@ -39,3 +39,6 @@ Só conteúdo do projeto Android. Nada do projeto de PC.
 - **Atualize ao concluir:** nova versão, bug achado ou resolvido, decisão relevante.
 - Notas curtas, com links `[[...]]`. Sem histórico de conversa nem o que o código já mostra.
 - Leia só a nota que a tarefa pede, não o cofre inteiro.
+
+## Release
+Seguir `docs/RELEASING.md`. Compile, pare e avise o Maestro-Claude antes de commitar ou publicar.

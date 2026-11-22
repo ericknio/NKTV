@@ -1,55 +1,61 @@
-# Releasing
+# Release do NKTV (Android)
 
-Releases are cut by pushing a tag. GitHub Actions does the rest.
+**Quem faz o quê:** o Antigravity compila e publica. O Maestro-Claude confere o APK **antes** e
+**depois** de publicar. Commit, push e release só acontecem com a validação do usuário.
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+Publicar dispara o auto-update nos aparelhos dos usuários. Um APK errado não tem como ser
+desfeito, só substituído por uma versão nova. Por isso a conferência vem antes da publicação.
 
-`.github/workflows/release.yml` runs the tests, assembles the release APK and attaches it to a
-GitHub release.
+## 1. Preparar e compilar (Antigravity)
 
-## Signing
-
-**Right now, release builds are signed with the Android debug key.** This is deliberate, and
-it is temporary.
-
-An *unsigned* APK cannot be installed on Android at all — the installer rejects it before the
-user sees anything, with an error that explains nothing. That would mean no one can test the
-app until signing infrastructure exists. So `app/build.gradle.kts` falls back to the debug key
-when no keystore is configured, and the result installs fine.
-
-The cost, stated plainly: **when the project moves to a real keystore, Android will refuse to
-upgrade over a debug-signed install.** Everyone testing today will have to uninstall and
-reinstall, losing their settings. That is fine for a handful of early testers and completely
-unacceptable once there are hundreds. **Set up real signing before announcing the project
-publicly.**
-
-### Setting up real signing
-
-1. Generate a keystore:
-
-   ```bash
-   keytool -genkeypair -v -keystore upload.jks -keyalg RSA -keysize 4096 \
-     -validity 10000 -alias opentv
+1. Combinar a versão nova com o usuário. Tem que ser maior que a publicada.
+2. `app/build.gradle.kts`: `versionCode` +1 e `versionName` novo.
+3. `app/src/main/java/app/opentv/ui/settings/AboutScreen.kt`, em `PatchNotesData`: nova entrada
+   no topo com `isLatest = true`; a anterior perde o `isLatest`. Texto curto, sem detalhe técnico.
+4. Criar `release_notes_<versão>.txt` na raiz (não vai para o git): 2 ou 3 linhas curtas.
+5. Compilar com as senhas no ambiente (sem elas o `assembleRelease` falha de propósito):
+   ```powershell
+   $env:KEYSTORE_PASSWORD = '<senha>'; $env:KEY_PASSWORD = '<senha>'
+   .\gradlew.bat testDebugUnitTest assembleRelease
    ```
+   Keystore: `~/.android/nktv-release.jks` (ou `KEYSTORE_PATH`). Não criar keystore novo.
+6. Copiar `app/build/outputs/apk/release/app-release.apk` para `NKTV.V<versão>.apk` na raiz.
+7. **PARAR.** Avisar o Maestro-Claude (`maestri ask`) com o caminho e o SHA-256 do APK.
+   Não commitar nem publicar antes do OK.
 
-2. Add these repository secrets under **Settings → Secrets and variables → Actions**:
-   `KEYSTORE_BASE64` (the output of `base64 -i upload.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-   `KEY_PASSWORD`.
+## 2. Conferir o APK (Maestro-Claude), antes de publicar
 
-3. That is all — `release.yml` and `build.gradle.kts` already pick them up. The release notes
-   will report `signed: yes` instead of `debug-key`.
+- `aapt2 dump badging`: pacote `com.nktv.app`, `versionCode` e `versionName` certos.
+- `apksigner verify --print-certs`: o certificado SHA-256 tem que ser **igual** ao do APK
+  anterior (`65cf342a…84bd`). Se for diferente, **não publicar**: o update quebraria.
+- Com um aparelho conectado: instalar a versão anterior oficial e atualizar por cima
+  (`adb install -r`). O app tem que abrir sem travar.
+- Banco Room: se `app/schemas` mudou, a versão nova precisa de `Migration` (não existe mais
+  `fallbackToDestructiveMigration`).
 
-**The keystore must belong to the project, not to one person.** A single maintainer holding
-the only copy is the same single point of failure this project exists to avoid — if they go
-quiet, nobody can ship an upgrade, and every user is stranded on whatever version they have.
-Share it among at least two maintainers, and back it up somewhere that is not one laptop.
+## 3. Publicar (Antigravity, depois do OK)
 
-Losing the keystore is unrecoverable. There is no reset.
+1. Última linha do `release_notes_<versão>.txt`, neste formato exato:
+   `SHA-256 (NKTV.V<versão>.apk): <hash>`
+2. Commit só dos arquivos rastreados (`git add -u`), sem o cofre `APK/` nem `.maestri/`:
+   `feat: release <versão> - <resumo curto>`, depois `git push origin main`.
+3. Criar a release:
+   ```powershell
+   gh release create <versão> NKTV.V<versão>.apk --title "NKTV <versão>" --notes-file release_notes_<versão>.txt --target main --latest
+   ```
+   - Tag **sem** o `v` (ex.: `1.0.9`). Usar `--target main`: o SHA abreviado dá erro 422.
+   - **Um único `.apk` por release.** O painel `app.fbtec.site` pega o primeiro que achar.
 
-## Version numbers
+## 4. Conferir depois (Maestro-Claude)
 
-Bump `versionCode` and `versionName` in `app/build.gradle.kts`. `versionCode` must increase on
-every release; Android uses it, not `versionName`, to decide what counts as an upgrade.
+- `releases/latest` aponta para a tag nova.
+- O APK baixado do GitHub tem o mesmo SHA-256 do arquivo conferido.
+
+## Regras que não mudam
+
+- **Nunca gerar uma chave nova.** O `ApkInstaller` e o Android exigem o mesmo certificado; uma
+  chave nova impede todos de atualizarem. Para trocar a senha, mude só a senha
+  (`keytool -storepasswd` e `-keypasswd`) e atualize o secret `KEYSTORE_PASSWORD` do GitHub.
+- Perder o keystore é irrecuperável. Mantenha uma cópia fora deste computador.
+- O workflow `.github/workflows/release.yml` só dispara em tags `v*`. Como a tag é sem `v`, ele
+  não roda no fluxo normal.

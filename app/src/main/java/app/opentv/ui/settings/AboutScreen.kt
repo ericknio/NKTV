@@ -258,9 +258,14 @@ private data class PatchNote(
 private object PatchNotesData {
     val notes = listOf(
         PatchNote(
-            version = "1.0.9",
+            version = "1.0.10",
             date = "Novembro 2026",
             isLatest = true,
+            changes = listOf("Nova aba Favoritos em Filmes e Séries."),
+        ),
+        PatchNote(
+            version = "1.0.9",
+            date = "Novembro 2026",
             changes = listOf(
                 "Correção de bugs e melhorias.",
                 "Melhorias nas resoluções dos celulares.",

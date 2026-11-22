@@ -105,8 +105,15 @@ fun MoviesScreen(
     val continueWatchingItems by viewModel.continueWatching.collectAsState()
     val movieCwItems = remember(continueWatchingItems) { continueWatchingItems.filter { it.mediaKey.startsWith("movie:") } }
 
+    val favouriteGroups by viewModel.favouriteMovieGroups.collectAsState()
+
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+
+    // Last favourite removed while "Favoritos" is open: fall back to "Todos" instead of a stale list.
+    LaunchedEffect(favouriteGroups.isEmpty()) {
+        if (favouriteGroups.isEmpty() && selectedCategory == "__fav__") selectedCategory = null
+    }
 
     LaunchedEffect(Unit) {
         if (hasSources) viewModel.ensureVodLoaded()
@@ -158,6 +165,19 @@ fun MoviesScreen(
                         )
                     }
                 }
+                if (favouriteGroups.isNotEmpty()) {
+                    item {
+                        VodRailEntry(
+                            label = stringResource(R.string.vod_favourites),
+                            selected = selectedCategory == "__fav__" && searchQuery.isEmpty(),
+                            onClick = {
+                                selectedCategory = "__fav__"
+                                searchQuery = ""
+                                viewModel.setMovieSearchQuery("")
+                            },
+                        )
+                    }
+                }
                 item {
                     VodRailEntry(
                         label = stringResource(R.string.vod_all),
@@ -193,6 +213,9 @@ fun MoviesScreen(
             val displayedGroups = if (isSearching) searchGroups else movieGroups
             when {
                 selectedCategory == "__cw__" -> ContinueWatchingRow(movieCwItems, onResume)
+                selectedCategory == "__fav__" && !isSearching -> {
+                    MovieCategoryGrid(groups = favouriteGroups, onOpenMovie = onOpenMovie, categoryKey = "__fav__")
+                }
                 displayedGroups.isEmpty() && isSearching -> {
                     EmptyVod(
                         "Nenhum filme encontrado",
@@ -240,8 +263,14 @@ fun SeriesScreen(
     val continueWatchingItems by viewModel.continueWatching.collectAsState()
     val seriesCwItems = remember(continueWatchingItems) { continueWatchingItems.filter { it.mediaKey.startsWith("ep:") } }
 
+    val favouriteSeries by viewModel.favouriteSeries.collectAsState()
+
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(favouriteSeries.isEmpty()) {
+        if (favouriteSeries.isEmpty() && selectedCategory == "__fav__") selectedCategory = null
+    }
 
     LaunchedEffect(Unit) {
         if (hasSources) viewModel.ensureVodLoaded()
@@ -293,6 +322,19 @@ fun SeriesScreen(
                         )
                     }
                 }
+                if (favouriteSeries.isNotEmpty()) {
+                    item {
+                        VodRailEntry(
+                            label = stringResource(R.string.vod_favourites),
+                            selected = selectedCategory == "__fav__" && searchQuery.isEmpty(),
+                            onClick = {
+                                selectedCategory = "__fav__"
+                                searchQuery = ""
+                                viewModel.setSeriesSearchQuery("")
+                            },
+                        )
+                    }
+                }
                 item {
                     VodRailEntry(
                         label = stringResource(R.string.vod_all),
@@ -328,6 +370,7 @@ fun SeriesScreen(
             val displayedSeries = if (isSearching) searchResults else categorySeries
             when {
                 selectedCategory == "__cw__" -> ContinueWatchingRow(seriesCwItems, onResume)
+                selectedCategory == "__fav__" && !isSearching -> SeriesCategoryGrid(favouriteSeries, onOpenSeries)
                 displayedSeries.isEmpty() && isSearching -> {
                     EmptyVod(
                         "Nenhuma série encontrada",

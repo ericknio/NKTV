@@ -890,6 +890,19 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         .hidingLocked(lockedSeriesCats) { it.categoryId }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Starred films/shows for the "Favoritos" rail entry; titles in still-locked categories stay hidden. */
+    val favouriteMovieGroups: StateFlow<List<MovieVariantGroup>> =
+        graph.catalogRepository.observeFavouriteMovies()
+            .hidingLocked(lockedMovieCats) { it.categoryId }
+            .map { list -> graph.catalogRepository.collapseVariants(list) }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val favouriteSeries: StateFlow<List<Series>> =
+        graph.catalogRepository.observeFavouriteSeries()
+            .hidingLocked(lockedSeriesCats) { it.categoryId }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun selectMovieCategory(id: String?) {
         movieLimit.value = MOVIE_PAGE
         movieCategory.value = id

@@ -11,7 +11,7 @@
   ```powershell
   .\gradlew.bat compileDebugKotlin
   ```
-- Release: `.\gradlew.bat assembleRelease` → arquivo gerado: `NKTV.V<versão>.apk`.
+- Release: seguir `docs/RELEASING.md` (Antigravity compila e publica; Claude confere o APK antes e depois). Arquivo gerado: `NKTV.V<versão>.apk`.
 
 ---
 
