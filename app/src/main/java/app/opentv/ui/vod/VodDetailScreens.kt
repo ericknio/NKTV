@@ -5,6 +5,13 @@
  */
 package app.opentv.ui.vod
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Check
 
 import androidx.compose.foundation.background
@@ -31,11 +38,14 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -89,9 +99,12 @@ fun MovieDetailScreen(
     var movie by remember(movieId) { mutableStateOf<Movie?>(null) }
     var moreLike by remember(movieId) { mutableStateOf<List<Movie>>(emptyList()) }
     var resumeExists by remember(movieId) { mutableStateOf(false) }
+    var trailerId by remember(movieId) { mutableStateOf<String?>(null) }
+    var confirmTrailerId by remember(movieId) { mutableStateOf<String?>(null) }
     val playFocus = remember { FocusRequester() }
     val hasAddons by viewModel.hasAddons.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     // null = the add-on picker is closed; a (possibly empty) list = show it. Separate flag for the spinner.
     var addonStreams by remember(movieId) { mutableStateOf<List<StremioStream>?>(null) }
     var addonLoading by remember(movieId) { mutableStateOf(false) }
@@ -103,6 +116,11 @@ fun MovieDetailScreen(
             resumeExists = viewModel.resumePosition("movie:${loaded.id}")?.let { !it.isFinished } == true
             moreLike = viewModel.moreLikeThis(loaded)
         }
+    }
+
+    LaunchedEffect(movie?.streamId) {
+        val current = movie ?: return@LaunchedEffect
+        trailerId = viewModel.movieTrailer(current)
     }
 
     val watchedKeys by viewModel.watchedKeys.collectAsState()
@@ -143,6 +161,14 @@ fun MovieDetailScreen(
                         }
                     }
                 }
+                trailerId?.let { id ->
+                    DetailButton(
+                        icon = Icons.Filled.Movie,
+                        label = stringResource(R.string.vod_trailer),
+                    ) {
+                        confirmTrailerId = id
+                    }
+                }
             }
         }
         item(key = "info") {
@@ -171,6 +197,16 @@ fun MovieDetailScreen(
                 onPlayUrl("movie:${m.id}", stream.url, m.displayTitle)
             },
             onDismiss = { addonStreams = null; addonLoading = false },
+        )
+    }
+
+    confirmTrailerId?.let { id ->
+        TrailerConfirmDialog(
+            onConfirm = {
+                confirmTrailerId = null
+                openTrailer(context, id)
+            },
+            onDismiss = { confirmTrailerId = null },
         )
     }
 }
@@ -271,8 +307,11 @@ fun SeriesDetailScreen(
     var series by remember(seriesId) { mutableStateOf<Series?>(null) }
     var moreLike by remember(seriesId) { mutableStateOf<List<Series>>(emptyList()) }
     var resumeItem by remember(seriesId) { mutableStateOf<VodViewModel.ResumeItem?>(null) }
+    var trailerId by remember(seriesId) { mutableStateOf<String?>(null) }
+    var confirmTrailerId by remember(seriesId) { mutableStateOf<String?>(null) }
     val playFocus = remember { FocusRequester() }
     val favFocus = remember { FocusRequester() }
+    val context = LocalContext.current
 
     LaunchedEffect(seriesId) {
         val loaded = viewModel.seriesDetail(seriesId)
@@ -281,6 +320,11 @@ fun SeriesDetailScreen(
             viewModel.loadEpisodes(loaded)
             moreLike = viewModel.moreLikeThisSeries(loaded)
         }
+    }
+
+    LaunchedEffect(series?.seriesId) {
+        val current = series ?: return@LaunchedEffect
+        trailerId = viewModel.seriesTrailer(current)
     }
     // Re-evaluated whenever the history changes, so coming back from the player shows the next episode.
     val continueWatching by viewModel.continueWatching.collectAsState()
@@ -343,6 +387,14 @@ fun SeriesDetailScreen(
                     viewModel.toggleSeriesFavourite(s)
                     series = s.copy(favourite = !s.favourite)
                 }
+                trailerId?.let { id ->
+                    DetailButton(
+                        icon = Icons.Filled.Movie,
+                        label = stringResource(R.string.vod_trailer),
+                    ) {
+                        confirmTrailerId = id
+                    }
+                }
             }
         }
         item(key = "info") {
@@ -381,6 +433,16 @@ fun SeriesDetailScreen(
                 SeriesPosterRow(stringResource(R.string.vod_more_like_this), moreLike, onOpenSeries)
             }
         }
+    }
+
+    confirmTrailerId?.let { id ->
+        TrailerConfirmDialog(
+            onConfirm = {
+                confirmTrailerId = null
+                openTrailer(context, id)
+            },
+            onDismiss = { confirmTrailerId = null },
+        )
     }
 }
 
@@ -786,4 +848,62 @@ private fun formatRuntime(seconds: Int): String {
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
     return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+}
+
+@Composable
+private fun TrailerConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val confirmFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(60)
+        runCatching { confirmFocus.requestFocus() }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.vod_trailer)) },
+        text = { Text(stringResource(R.string.vod_trailer_confirm_body)) },
+        confirmButton = {
+            DialogTextButton(
+                label = stringResource(R.string.common_yes),
+                modifier = Modifier.focusRequester(confirmFocus),
+                onClick = onConfirm,
+            )
+        },
+        dismissButton = {
+            DialogTextButton(
+                label = stringResource(R.string.common_no),
+                onClick = onDismiss,
+            )
+        },
+    )
+}
+
+@Composable
+private fun DialogTextButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.onFocusChanged { focused = it.isFocused },
+        colors = ButtonDefaults.textButtonColors(
+            containerColor = if (focused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            contentColor = if (focused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary,
+        ),
+    ) {
+        Text(label)
+    }
+}
+
+private fun openTrailer(context: Context, videoId: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
+    try {
+        context.startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+        Toast.makeText(context, context.getString(R.string.vod_trailer_no_app), Toast.LENGTH_SHORT).show()
+    }
 }

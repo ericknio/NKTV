@@ -41,10 +41,12 @@ Só conteúdo do projeto Android. Nada do projeto de PC.
 
 ---
 
-## Status Atual — v1.0.10 (produção)
+## Status Atual — v1.0.13 (produção)
 
-### Em produção (v1.0.10)
+### Em produção (v1.0.13)
 - Publicado no GitHub (`ericknio/NKTV`). O painel `app.fbtec.site` será desativado; o app atualiza direto pelo GitHub.
+- 1.0.13 (sem 1.0.12): trailer (Xtream, depois TMDB com chave embutida só para trailer via env `TMDB_API_KEY` no build) com confirmação antes do YouTube; avanço acumulado com balão de tempo; velocidade 0,5–2×; aviso de próximo episódio 90 s antes do fim; buffer por RAM do aparelho.
+- 1.0.11: próximo episódio (botão, aviso de 40 s, avanço automático), "✓ Assistido" verde, Continuar assistindo oferece o próximo episódio, player fecha no fim de filme/último episódio, listas voltam à mesma categoria e rolagem, busca só abre teclado com OK/toque.
 - 1.0.10: aba "Favoritos" em Filmes e Séries, abaixo de "Continuar assistindo".
 - Da 1.0.9: paginação do catálogo de filmes (páginas de 300, Home com 5.000), limite de 3 reconexões automáticas no player, barras do guia ao vivo avançando, posição do filme salva ao sair, densidade da interface fixa por celular (TV inalterada).
 - Release: `assembleRelease` exige `KEYSTORE_PASSWORD` e `KEY_PASSWORD` no ambiente. Publicar com `gh release create <versão> NKTV.V<versão>.apk` (tag sem `v`, um único APK versionado).

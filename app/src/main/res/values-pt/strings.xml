@@ -404,6 +404,10 @@
     <string name="vod_watched">Assistido</string>
     <string name="player_next_episode">Próximo episódio</string>
     <string name="player_next_in">Começa em %1$d s</string>
+    <string name="player_speed">Velocidade (%1$s)</string>
+    <string name="vod_trailer">Trailer</string>
+    <string name="vod_trailer_no_app">Nenhum aplicativo encontrado para abrir o trailer.</string>
+    <string name="vod_trailer_confirm_body">Você vai abrir o YouTube para assistir ao trailer. Deseja continuar?</string>
     <string name="vod_large_provider_note">Provedores com catálogos grandes podem levar alguns minutos no primeiro carregamento.</string>
     <string name="vod_recommended">Recomendados para você</string>
     <string name="vod_recently_added">Adicionados recentemente</string>

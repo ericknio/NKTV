@@ -246,6 +246,7 @@ class XtreamApi(
             rating = info["rating"].asDoubleOrNull,
             year = info["year"].asIntOrNull ?: info["releasedate"].asStringOrNull?.take(4)?.toIntOrNull(),
             durationSeconds = info["duration_secs"].asIntOrNull,
+            youtubeTrailer = info["youtube_trailer"].asStringOrNull,
         )
     }
 
@@ -268,6 +269,7 @@ class XtreamApi(
             plot = info["plot"].asStringOrNull ?: info["description"].asStringOrNull,
             rating = info["rating"].asDoubleOrNull,
             year = info["year"].asIntOrNull ?: info["releaseDate"].asStringOrNull?.take(4)?.toIntOrNull(),
+            youtubeTrailer = info["youtube_trailer"].asStringOrNull,
         )
     }
 
@@ -394,6 +396,7 @@ class XtreamApi(
         val rating: Double?,
         val year: Int?,
         val durationSeconds: Int?,
+        val youtubeTrailer: String? = null,
     )
 
     /** Rich per-series metadata from `get_series_info`. Series have no director. See [VodInfo]. */
@@ -405,6 +408,7 @@ class XtreamApi(
         val plot: String?,
         val rating: Double?,
         val year: Int?,
+        val youtubeTrailer: String? = null,
     )
 }
 

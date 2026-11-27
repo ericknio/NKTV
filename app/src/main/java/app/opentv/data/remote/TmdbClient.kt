@@ -6,6 +6,7 @@
 package app.opentv.data.remote
 
 import android.util.Log
+import app.opentv.BuildConfig
 import app.opentv.core.AppSettings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -60,6 +61,12 @@ class TmdbClient(
     /** True once the user has saved a key. Callers gate on this so nothing runs without one. */
     fun isConfigured(): Boolean = settings.tmdbApiKey.value.isNotBlank()
 
+    /** True once either the user's TMDB key or the bundled trailer-only key is available. */
+    fun canFetchTrailer(): Boolean = trailerApiKey().isNotEmpty()
+
+    private fun trailerApiKey(): String =
+        settings.tmdbApiKey.value.trim().ifEmpty { BuildConfig.TMDB_TRAILER_KEY.trim() }
+
     /** Metadata for a film: by [tmdbId] when the provider already gave one, else a title(+year) search. */
     fun movieMeta(title: String, year: Int?, tmdbId: String?): TmdbMeta? =
         lookup(isMovie = true, title = title, year = year, tmdbId = tmdbId)
@@ -88,6 +95,43 @@ class TmdbClient(
         return o["imdb_id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.startsWith("tt") }
     }
 
+    /** Trailer YouTube key for a movie or show, preferring Portuguese. Null without a match. */
+    fun trailer(isMovie: Boolean, tmdbId: String): String? {
+        val key = trailerApiKey()
+        if (key.isEmpty() || tmdbId.isBlank()) return null
+        return trailerWithKey(isMovie, tmdbId, key)
+    }
+
+    /** Finds a title on TMDB by name(+year) and returns its trailer YouTube key. */
+    fun trailerByTitle(isMovie: Boolean, title: String, year: Int?): String? {
+        val key = trailerApiKey()
+        if (key.isEmpty()) return null
+        val query = searchTitle(title)
+        if (query.isBlank()) return null
+        val id = searchId(isMovie, query, year, key) ?: return null
+        return trailerWithKey(isMovie, id, key)
+    }
+
+    private fun trailerWithKey(isMovie: Boolean, tmdbId: String, key: String): String? {
+        val url = TMDB_BASE.newBuilder()
+            .addPathSegment(if (isMovie) "movie" else "tv")
+            .addPathSegment(tmdbId)
+            .addPathSegment("videos")
+            .addQueryParameter("api_key", key)
+            .build()
+        val results = get(url)?.jsonObject?.get("results")?.jsonArray ?: return null
+        val trailers = results.mapNotNull { it.jsonObject }
+            .filter {
+                it["site"]?.jsonPrimitive?.contentOrNull.equals("YouTube", ignoreCase = true) &&
+                it["type"]?.jsonPrimitive?.contentOrNull.equals("Trailer", ignoreCase = true)
+            }
+        val pt = trailers.firstOrNull {
+            it["iso_639_1"]?.jsonPrimitive?.contentOrNull?.startsWith("pt", ignoreCase = true) == true
+        }
+        val chosen = pt ?: trailers.firstOrNull()
+        return chosen?.get("key")?.jsonPrimitive?.contentOrNull
+    }
+
     private fun lookup(isMovie: Boolean, title: String, year: Int?, tmdbId: String?): TmdbMeta? {
         val key = settings.tmdbApiKey.value.trim()
         if (key.isEmpty()) return null
@@ -95,7 +139,7 @@ class TmdbClient(
         if (query.isBlank() && tmdbId.isNullOrBlank()) return null
         val id = tmdbId?.takeIf { it.isNotBlank() } ?: searchId(isMovie, query, year, key) ?: return null
         return runCatching { details(isMovie, id, key) }
-            .onFailure { Log.w(TAG, "TMDB details failed for $id", it) }
+            .onFailure { Log.w(TAG, "TMDB details failed for $id: ${it.javaClass.simpleName}") }
             .getOrNull()
     }
 
@@ -167,7 +211,7 @@ class TmdbClient(
                 val body = response.body?.string() ?: return null
                 json.parseToJsonElement(body)
             }
-        }.onFailure { Log.w(TAG, "TMDB request failed", it) }.getOrNull()
+        }.onFailure { Log.w(TAG, "TMDB request failed: ${it.javaClass.simpleName}") }.getOrNull()
     }
 
     /** Strips a trailing "(2023)"/year and collapses whitespace so the title searches cleanly. */

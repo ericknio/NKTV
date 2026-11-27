@@ -5,6 +5,8 @@
  */
 package app.opentv.ui.vod
 
+import androidx.compose.material.icons.filled.Speed
+
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.view.ViewGroup
@@ -166,8 +168,49 @@ fun VodPlayerScreen(
     // 0 = none; odd = rewind, even non-zero = forward (alternates to force LaunchedEffect relaunch)
     var seekFlash by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var seekFlashCount by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // D-pad cumulative seek when controls are hidden: sums +-SEEK_INCREMENT_MILLIS per tap, commits after 600ms idle.
+    var pendingSeekTarget by remember(mediaKey) { mutableStateOf<Long?>(null) }
+    var pendingSeekStartPos by remember(mediaKey) { mutableStateOf<Long?>(null) }
+    var pendingSeekDelta by remember(mediaKey) { mutableLongStateOf(0L) }
+    var pendingSeekVersion by remember(mediaKey) { androidx.compose.runtime.mutableIntStateOf(0) }
+    var lastShownTarget by remember(mediaKey) { mutableLongStateOf(0L) }
+    var lastShownDelta by remember(mediaKey) { mutableLongStateOf(0L) }
+    var playbackSpeed by remember(mediaKey) { mutableFloatStateOf(1f) }
     val barFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
+
+    LaunchedEffect(mediaKey) {
+        controller.player.setPlaybackSpeed(1f)
+    }
+
+    fun addPendingSeek(deltaMs: Long) {
+        val p = controller.player
+        val ceiling = if (growingRec) p.bufferedPosition.coerceAtLeast(0L)
+        else (p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
+        val startPos = pendingSeekStartPos ?: p.currentPosition
+        if (pendingSeekStartPos == null) pendingSeekStartPos = startPos
+        val base = pendingSeekTarget ?: startPos
+        val next = (base + deltaMs).coerceIn(0L, ceiling)
+        val realDelta = next - startPos
+        pendingSeekTarget = next
+        pendingSeekDelta = realDelta
+        lastShownTarget = next
+        lastShownDelta = realDelta
+        pendingSeekVersion++
+    }
+
+    LaunchedEffect(mediaKey, pendingSeekVersion) {
+        if (pendingSeekVersion == 0) return@LaunchedEffect
+        val target = pendingSeekTarget ?: return@LaunchedEffect
+        delay(600)
+        val p = controller.player
+        val ceiling = if (growingRec) p.bufferedPosition.coerceAtLeast(0L)
+        else (p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
+        p.seekTo(target.coerceIn(0L, ceiling))
+        pendingSeekTarget = null
+        pendingSeekStartPos = null
+        pendingSeekDelta = 0L
+    }
 
     fun reveal() { controlsVisible = true; interaction++ }
 
@@ -205,7 +248,7 @@ fun VodPlayerScreen(
     }
     val remainingMs = durationMs - positionMs
     val showNextPrompt = nextEp != null && !growingRec && !nextPromptDismissed && !advancing &&
-        !scrubbing && durationMs > 60_000 && remainingMs in 0..40_000
+        !scrubbing && durationMs > 180_000 && remainingMs in 0..90_000
 
     fun playNext() {
         val next = nextEp ?: return
@@ -344,10 +387,16 @@ fun VodPlayerScreen(
             .onPreviewKeyEvent { event ->
                 when {
                     event.key == Key.Back || event.key == Key.Escape -> false
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionRight -> {
+                        if (!growingRec && !controller.player.isCurrentMediaItemSeekable) true
+                        else { addPendingSeek(PlayerController.SEEK_INCREMENT_MILLIS); true }
+                    }
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionLeft -> {
+                        if (!growingRec && !controller.player.isCurrentMediaItemSeekable) true
+                        else { addPendingSeek(-PlayerController.SEEK_INCREMENT_MILLIS); true }
+                    }
                     // While the next-episode prompt is up, OK must reach its button, not just reveal the bar.
                     showNextPrompt -> false
-                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionRight -> { controller.seekForward(); true }
-                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionLeft -> { controller.seekBackward(); true }
                     event.type == KeyEventType.KeyDown && !controlsVisible -> { reveal(); true }
                     event.type == KeyEventType.KeyDown -> { interaction++; false }
                     else -> false
@@ -583,6 +632,27 @@ fun VodPlayerScreen(
                         vodPanel = if (vodPanel == VodPanel.AUDIO) VodPanel.NONE else VodPanel.AUDIO
                         interaction++
                     }
+                    Spacer(Modifier.width(10.dp))
+                    val speedLabel = when (playbackSpeed) {
+                        1f -> "1x"
+                        1.25f -> "1.25x"
+                        1.5f -> "1.5x"
+                        2f -> "2x"
+                        0.5f -> "0.5x"
+                        0.75f -> "0.75x"
+                        else -> "${playbackSpeed}x"
+                    }
+                    VodChip(
+                        icon = Icons.Filled.Speed,
+                        label = stringResource(R.string.player_speed, speedLabel),
+                    ) {
+                        val speeds = listOf(1f, 1.25f, 1.5f, 2f, 0.5f, 0.75f)
+                        val nextIdx = (speeds.indexOf(playbackSpeed) + 1) % speeds.size
+                        val nextSpeed = speeds[nextIdx]
+                        playbackSpeed = nextSpeed
+                        controller.player.setPlaybackSpeed(nextSpeed)
+                        interaction++
+                    }
                     if (!app.opentv.isRunningOnTelevision(context)) {
                         Spacer(Modifier.width(10.dp))
                         val isLandscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -600,6 +670,37 @@ fun VodPlayerScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // Cumulative D-pad seek overlay (center-bottom): kept at end of Box so it renders above all overlays
+        AnimatedVisibility(
+            visible = pendingSeekTarget != null,
+            enter = fadeIn(tween(80)),
+            exit = fadeOut(tween(150)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                )
+                // Sit above the next-episode prompt instead of covering it.
+                .padding(bottom = if (showNextPrompt) 128.dp else 48.dp),
+        ) {
+            val deltaSec = (lastShownDelta / 1000).toInt()
+            val deltaText = if (deltaSec > 0) "+$deltaSec s" else "$deltaSec s"
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.8f))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "${formatDuration(lastShownTarget)}  $deltaText",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
         }
     }

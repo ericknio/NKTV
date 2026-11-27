@@ -507,6 +507,46 @@ class CatalogRepository(
         result
     }
 
+    suspend fun movieTrailer(movie: Movie): String? = withContext(Dispatchers.IO) {
+        val source = sourceDao.byId(movie.sourceId)
+        var xtreamTmdbId: String? = null
+        if (source?.kind == SourceKind.XTREAM) {
+            val info = runCatching { api.movieInfo(source, movie.streamId) }.getOrNull()
+            xtreamTmdbId = info?.tmdbId
+            parseYouTubeId(info?.youtubeTrailer)?.let { return@withContext it }
+        }
+        tmdbTrailer(isMovie = true, title = movie.name, year = movie.year, tmdbId = movie.tmdbId ?: xtreamTmdbId)
+    }
+
+    suspend fun seriesTrailer(series: Series): String? = withContext(Dispatchers.IO) {
+        val source = sourceDao.byId(series.sourceId)
+        var xtreamTmdbId: String? = null
+        if (source?.kind == SourceKind.XTREAM) {
+            val info = runCatching { api.seriesInfo(source, series.seriesId) }.getOrNull()
+            xtreamTmdbId = info?.tmdbId
+            parseYouTubeId(info?.youtubeTrailer)?.let { return@withContext it }
+        }
+        tmdbTrailer(isMovie = false, title = series.name, year = series.year, tmdbId = series.tmdbId ?: xtreamTmdbId)
+    }
+
+    private fun tmdbTrailer(isMovie: Boolean, title: String, year: Int?, tmdbId: String?): String? {
+        if (!tmdb.canFetchTrailer()) return null
+        val key = runCatching {
+            if (!tmdbId.isNullOrBlank()) tmdb.trailer(isMovie = isMovie, tmdbId = tmdbId)
+            else tmdb.trailerByTitle(isMovie = isMovie, title = VodTitleCleaner.clean(title), year = year)
+        }.getOrNull()
+        return parseYouTubeId(key)
+    }
+
+    private fun parseYouTubeId(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val trimmed = raw.trim()
+        if (trimmed == "0" || trimmed.equals("null", ignoreCase = true) || trimmed.equals("none", ignoreCase = true)) return null
+        val match = Regex("""(?:v=|youtu\.be/|embed/)([a-zA-Z0-9_-]{11})""").find(trimmed)
+        val candidate = match?.groupValues?.get(1) ?: trimmed
+        return if (Regex("""^[a-zA-Z0-9_-]{11}$""").matches(candidate)) candidate else null
+    }
+
     /**
      * Collapses a list of movies (e.g. one category's titles) into logical films with switchable
      * quality tiers — see [collapseMovieVariants]. Pure; hand it whatever list the UI is about to

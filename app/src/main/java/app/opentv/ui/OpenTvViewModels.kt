@@ -1271,6 +1271,10 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     /** Loads a series, lazily enriching backdrop/cast/genre on first open. See CatalogRepository.seriesDetail. */
     suspend fun seriesDetail(id: Long): Series? = graph.catalogRepository.seriesDetail(id)
 
+    suspend fun movieTrailer(movie: Movie): String? = graph.catalogRepository.movieTrailer(movie)
+
+    suspend fun seriesTrailer(series: Series): String? = graph.catalogRepository.seriesTrailer(series)
+
     /** "More like this" for the movie detail screen. */
     suspend fun moreLikeThis(movie: Movie): List<Movie> = graph.catalogRepository.moreLikeThis(movie)
 

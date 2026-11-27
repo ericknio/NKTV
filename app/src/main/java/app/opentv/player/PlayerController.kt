@@ -5,6 +5,7 @@
  */
 package app.opentv.player
 
+import android.app.ActivityManager
 import android.content.Context
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -87,6 +88,10 @@ class PlayerController(
      */
     private val liveRecording: Boolean = false,
 ) {
+
+    enum class DeviceTier { FRACO, MEDIO, BOM }
+
+    private val deviceTier = getDeviceTier(context)
 
     /** Channel-surf debounce for this controller — longer for the preview so browsing is calm. */
     private val switchDebounceMillis = if (preview) PREVIEW_SWITCH_DEBOUNCE_MILLIS else SWITCH_DEBOUNCE_MILLIS
@@ -202,12 +207,21 @@ class PlayerController(
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                    if (preview) PREVIEW_MIN_BUFFER_MILLIS else MIN_BUFFER_MILLIS,
+                    when {
+                        preview -> PREVIEW_MIN_BUFFER_MILLIS
+                        dvr -> MIN_BUFFER_MILLIS
+                        liveRecording -> MIN_BUFFER_MILLIS
+                        deviceTier == DeviceTier.FRACO -> TIER_FRACO_MIN_BUFFER_MS
+                        deviceTier == DeviceTier.MEDIO -> TIER_MEDIO_MIN_BUFFER_MS
+                        else -> TIER_BOM_MIN_BUFFER_MS
+                    },
                     when {
                         preview -> PREVIEW_MAX_BUFFER_MILLIS
                         dvr -> DVR_MAX_BUFFER_MILLIS
                         liveRecording -> LIVE_REC_MAX_BUFFER_MILLIS
-                        else -> MAX_BUFFER_MILLIS
+                        deviceTier == DeviceTier.FRACO -> TIER_FRACO_MAX_BUFFER_MS
+                        deviceTier == DeviceTier.MEDIO -> TIER_MEDIO_MAX_BUFFER_MS
+                        else -> TIER_BOM_MAX_BUFFER_MS
                     },
                     when {
                         preview -> PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS
@@ -221,7 +235,24 @@ class PlayerController(
                     },
                 )
                 // Retain the last few minutes so pause/rewind of live TV has something to seek into.
-                .apply { if (dvr) setBackBuffer(DVR_BACK_BUFFER_MILLIS, true) }
+                .apply {
+                    if (dvr) {
+                        setBackBuffer(DVR_BACK_BUFFER_MILLIS, true)
+                    } else if (!preview && !liveRecording) {
+                        val backMs = when (deviceTier) {
+                            DeviceTier.FRACO -> TIER_FRACO_BACK_BUFFER_MS
+                            DeviceTier.MEDIO -> TIER_MEDIO_BACK_BUFFER_MS
+                            DeviceTier.BOM -> TIER_BOM_BACK_BUFFER_MS
+                        }
+                        setBackBuffer(backMs, true)
+                        val targetBytes = when (deviceTier) {
+                            DeviceTier.FRACO -> TIER_FRACO_TARGET_BUFFER_BYTES
+                            DeviceTier.MEDIO -> TIER_MEDIO_TARGET_BUFFER_BYTES
+                            DeviceTier.BOM -> TIER_BOM_TARGET_BUFFER_BYTES
+                        }
+                        setTargetBufferBytes(targetBytes)
+                    }
+                }
                 .build(),
         )
         .build()
@@ -468,7 +499,7 @@ class PlayerController(
         player.release()
     }
 
-    private companion object {
+    companion object {
         const val DEFAULT_USER_AGENT = "OpenTV/0.1 (Android)"
 
         /** ExoPlayer's "do not retry" sentinel. */
@@ -487,9 +518,27 @@ class PlayerController(
          * deeper buffer is the difference between a momentary hiccup and a visible stall.
          */
         const val MIN_BUFFER_MILLIS = 15_000
-        const val MAX_BUFFER_MILLIS = 60_000
         const val BUFFER_FOR_PLAYBACK_MILLIS = 2_500
         const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 5_000
+
+        // Device tier buffer tuning (VOD/live normal)
+        const val TIER_LOW_RAM_BYTES = 1_610_612_736L // 1.5 GB
+        const val TIER_MED_RAM_BYTES = 3_758_096_384L // 3.5 GB
+
+        const val TIER_FRACO_MIN_BUFFER_MS = 15_000
+        const val TIER_FRACO_MAX_BUFFER_MS = 30_000
+        const val TIER_FRACO_BACK_BUFFER_MS = 10_000
+        const val TIER_FRACO_TARGET_BUFFER_BYTES = 48 * 1024 * 1024
+
+        const val TIER_MEDIO_MIN_BUFFER_MS = 20_000
+        const val TIER_MEDIO_MAX_BUFFER_MS = 60_000
+        const val TIER_MEDIO_BACK_BUFFER_MS = 20_000
+        const val TIER_MEDIO_TARGET_BUFFER_BYTES = 64 * 1024 * 1024
+
+        const val TIER_BOM_MIN_BUFFER_MS = 30_000
+        const val TIER_BOM_MAX_BUFFER_MS = 120_000
+        const val TIER_BOM_BACK_BUFFER_MS = 30_000
+        const val TIER_BOM_TARGET_BUFFER_BYTES = 96 * 1024 * 1024
 
         // DVR mode (pause & rewind live TV): keep a couple of minutes behind the live edge to seek
         // into, and let the forward buffer grow to match so a pause of up to a couple of minutes
@@ -518,5 +567,20 @@ class PlayerController(
         const val PREVIEW_SWITCH_DEBOUNCE_MILLIS = 700L
 
         const val LIVE_TARGET_OFFSET_MILLIS = 10_000L
+
+        private var cachedDeviceTier: DeviceTier? = null
+
+        fun getDeviceTier(context: Context): DeviceTier {
+            cachedDeviceTier?.let { return it }
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val memInfo = ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+            val tier = when {
+                am?.isLowRamDevice == true || memInfo.totalMem <= TIER_LOW_RAM_BYTES -> DeviceTier.FRACO
+                memInfo.totalMem < TIER_MED_RAM_BYTES -> DeviceTier.MEDIO
+                else -> DeviceTier.BOM
+            }
+            cachedDeviceTier = tier
+            return tier
+        }
     }
 }

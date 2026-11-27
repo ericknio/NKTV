@@ -14,9 +14,10 @@ android {
         applicationId = "com.nktv.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.0.11"
+        versionCode = 13
+        versionName = "1.0.13"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "TMDB_TRAILER_KEY", "\"${System.getenv("TMDB_API_KEY") ?: ""}\"")
     }
 
     signingConfigs {
